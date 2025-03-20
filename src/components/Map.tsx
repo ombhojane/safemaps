@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Route, RiskArea } from '@/types';
 import { cn } from '@/lib/utils';
-import { LucideInfo, MapPin } from 'lucide-react';
+import { LucideInfo, MapPin, Navigation } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface MapProps {
@@ -45,6 +45,58 @@ const Map = ({ route, riskAreas, isLoading, className }: MapProps) => {
     }
   };
 
+  // Generate random road paths for a more realistic map appearance
+  const generateRoadPaths = () => {
+    const paths = [];
+    const roadCount = 8;
+    
+    for (let i = 0; i < roadCount; i++) {
+      const startX = Math.random() * 100;
+      const startY = Math.random() * 100;
+      const controlX1 = Math.random() * 100;
+      const controlY1 = Math.random() * 100;
+      const controlX2 = Math.random() * 100;
+      const controlY2 = Math.random() * 100;
+      const endX = Math.random() * 100;
+      const endY = Math.random() * 100;
+      
+      paths.push({
+        id: `road-${i}`,
+        path: `M ${startX}% ${startY}% C ${controlX1}% ${controlY1}%, ${controlX2}% ${controlY2}%, ${endX}% ${endY}%`,
+        width: Math.random() * 1.5 + 0.5
+      });
+    }
+    
+    return paths;
+  };
+
+  // Generate random building shapes
+  const generateBuildings = () => {
+    const buildings = [];
+    const buildingCount = 20;
+    
+    for (let i = 0; i < buildingCount; i++) {
+      const x = Math.random() * 90 + 5;
+      const y = Math.random() * 90 + 5;
+      const size = Math.random() * 6 + 2;
+      const opacity = Math.random() * 0.3 + 0.1;
+      
+      buildings.push({
+        id: `building-${i}`,
+        x: `${x}%`,
+        y: `${y}%`,
+        width: `${size}%`,
+        height: `${size * (Math.random() * 0.5 + 0.5)}%`,
+        opacity
+      });
+    }
+    
+    return buildings;
+  };
+
+  const roads = generateRoadPaths();
+  const buildings = generateBuildings();
+
   return (
     <div 
       ref={mapContainerRef} 
@@ -67,20 +119,53 @@ const Map = ({ route, riskAreas, isLoading, className }: MapProps) => {
                               linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)`,
               backgroundSize: '20px 20px' 
             }}></div>
+            
+            {/* Buildings in the background */}
+            <div className="absolute inset-0">
+              {buildings.map(building => (
+                <div
+                  key={building.id}
+                  className="absolute bg-gray-300 dark:bg-gray-700 rounded-sm"
+                  style={{
+                    left: building.x,
+                    top: building.y,
+                    width: building.width,
+                    height: building.height,
+                    opacity: building.opacity
+                  }}
+                ></div>
+              ))}
+            </div>
+            
+            {/* Road network */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 2 }}>
+              {roads.map(road => (
+                <path 
+                  key={road.id}
+                  d={road.path}
+                  fill="none"
+                  stroke="rgba(150,150,150,0.2)"
+                  strokeWidth={road.width}
+                  strokeLinecap="round"
+                />
+              ))}
+            </svg>
           </div>
 
           {/* Simulated map content */}
           {route && (
             <div className="absolute inset-0 p-4">
               {/* Source marker */}
-              <div className="absolute animate-pulse-slow" style={{ 
+              <div className="absolute z-20 animate-pulse-slow" style={{ 
                 left: '20%', 
                 top: '60%',
                 transform: 'translate(-50%, -50%)'
               }}>
                 <div className="relative">
                   <div className="absolute -inset-2 bg-primary/20 rounded-full animate-ping opacity-50"></div>
-                  <div className="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-md"></div>
+                  <div className="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-md flex items-center justify-center">
+                    <Navigation className="w-3 h-3 text-white" />
+                  </div>
                 </div>
                 <div className="glassmorphism mt-2 px-2 py-1 rounded-md text-xs font-medium text-center shadow-sm">
                   {route.source.name}
@@ -88,36 +173,81 @@ const Map = ({ route, riskAreas, isLoading, className }: MapProps) => {
               </div>
 
               {/* Destination marker */}
-              <div className="absolute" style={{ 
+              <div className="absolute z-20" style={{ 
                 left: '75%', 
                 top: '30%',
                 transform: 'translate(-50%, -50%)'
               }}>
                 <div className="relative">
                   <div className="absolute -inset-3 bg-primary/20 rounded-full animate-ping opacity-50"></div>
-                  <div className="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-md"></div>
+                  <div className="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-md flex items-center justify-center">
+                    <MapPin className="w-3 h-3 text-white" />
+                  </div>
                 </div>
                 <div className="glassmorphism mt-2 px-2 py-1 rounded-md text-xs font-medium text-center shadow-sm">
                   {route.destination.name}
                 </div>
               </div>
 
-              {/* Route line */}
+              {/* Route path with intermediate points */}
               <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
+                {/* Main route path */}
                 <path 
-                  d={`M ${20}% ${60}% Q ${45}% ${40}%, ${75}% ${30}%`}
+                  d="M 20% 60% C 35% 55%, 50% 40%, 65% 35% S 70% 32%, 75% 30%"
                   fill="none"
                   stroke="#3b82f6"
                   strokeWidth="4"
                   strokeLinecap="round"
-                  strokeDasharray="8,8"
-                  className="animate-dash"
-                  style={{ 
-                    strokeDashoffset: '0',
-                    animation: 'dash 30s linear infinite',
-                    strokeDasharray: '8,6' 
-                  }}
+                  className="route-path"
                 />
+                
+                {/* Route highlight effect */}
+                <path 
+                  d="M 20% 60% C 35% 55%, 50% 40%, 65% 35% S 70% 32%, 75% 30%"
+                  fill="none"
+                  stroke="rgba(59, 130, 246, 0.3)"
+                  strokeWidth="8"
+                  strokeLinecap="round"
+                  filter="blur(4px)"
+                />
+                
+                {/* Animated route path */}
+                <path 
+                  d="M 20% 60% C 35% 55%, 50% 40%, 65% 35% S 70% 32%, 75% 30%"
+                  fill="none"
+                  stroke="white"
+                  strokeWidth="4"
+                  strokeDasharray="1,30"
+                  strokeLinecap="round"
+                  className="animate-dash"
+                />
+                
+                {/* Route intermediate points */}
+                {[25, 35, 45, 55, 65].map((position, i) => {
+                  // Calculate position along the curve 
+                  // This is a simplified version, in a real app you'd use actual route points
+                  const x = position;
+                  const y = 60 - (position - 20) * 0.6;
+                  
+                  // Assign a risk value to some points
+                  const hasRisk = Math.random() > 0.5;
+                  const riskScore = hasRisk ? Math.floor(Math.random() * 10) : undefined;
+                  
+                  return (
+                    <circle 
+                      key={`point-${i}`}
+                      cx={`${x}%`}
+                      cy={`${y}%`}
+                      r="5"
+                      className={cn(
+                        "transition-colors duration-300",
+                        hasRisk ? getRiskColor(riskScore) : "fill-primary"
+                      )}
+                      stroke="white"
+                      strokeWidth="2"
+                    />
+                  );
+                })}
               </svg>
 
               {/* Risk areas */}
@@ -126,12 +256,11 @@ const Map = ({ route, riskAreas, isLoading, className }: MapProps) => {
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <div 
-                        className="absolute cursor-pointer animate-float"
+                        className="absolute cursor-pointer animate-float z-30"
                         style={{ 
                           left: `${25 + index * 12}%`, 
                           top: `${45 + (index % 3) * 8}%`,
                           transform: 'translate(-50%, -50%)',
-                          zIndex: 10,
                           animationDelay: `${index * 0.5}s`
                         }}
                       >
@@ -185,3 +314,4 @@ const Map = ({ route, riskAreas, isLoading, className }: MapProps) => {
 };
 
 export default Map;
+

@@ -43,6 +43,10 @@
     --sidebar-accent-foreground: 240 5.9% 10%;
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    
+    --risk-low: 142 76% 36%;
+    --risk-medium: 31 95% 44%;
+    --risk-high: 0 84% 60%;
   }
 
   .dark {
@@ -81,6 +85,10 @@
     --sidebar-accent-foreground: 240 4.8% 95.9%;
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
+    
+    --risk-low: 142 70% 45%;
+    --risk-medium: 31 95% 44%;
+    --risk-high: 0 84% 60%;
   }
 }
 
@@ -139,6 +147,56 @@
   animation-delay: 500ms;
 }
 
+/* Route animations */
+@keyframes dash {
+  to {
+    stroke-dashoffset: -100;
+  }
+}
+
+.animate-dash {
+  animation: dash 3s linear infinite;
+}
+
+.route-path {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: dash-once 2s ease-in-out forwards;
+}
+
+@keyframes dash-once {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Float animation for risk markers */
+@keyframes float {
+  0%, 100% {
+    transform: translate(-50%, -50%) translateY(0px);
+  }
+  50% {
+    transform: translate(-50%, -50%) translateY(-10px);
+  }
+}
+
+.animate-float {
+  animation: float 5s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
@@ -157,3 +215,17 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.2);
 }
+
+/* Define risk colors for direct use */
+.bg-risk-low {
+  background-color: hsl(var(--risk-low));
+}
+
+.bg-risk-medium {
+  background-color: hsl(var(--risk-medium));
+}
+
+.bg-risk-high {
+  background-color: hsl(var(--risk-high));
+}
+

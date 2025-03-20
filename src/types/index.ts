@@ -14,6 +14,11 @@ export interface RoutePoint {
   };
   riskScore?: number;
   riskReason?: string;
+  // Added visualization properties
+  position?: {
+    x: string;
+    y: string;
+  };
 }
 
 export interface Route {
@@ -25,6 +30,8 @@ export interface Route {
   distance: string;
   duration: string;
   riskAreas: RiskArea[];
+  // Add path property for visualization
+  path?: string;
 }
 
 export interface RiskArea {
@@ -45,3 +52,20 @@ export interface RouteAnalysis {
   riskAreas: RiskArea[];
   recommendation: string;
 }
+
+// Map visualization types
+export interface RoadPath {
+  id: string;
+  path: string;
+  width: number;
+}
+
+export interface Building {
+  id: string;
+  x: string;
+  y: string;
+  width: string;
+  height: string;
+  opacity: number;
+}
+
