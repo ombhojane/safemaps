@@ -31,6 +31,8 @@ export interface Route {
   riskAreas: RiskArea[];
   // Add path property for visualization
   path?: string;
+  // Add street view images
+  streetViewImages?: string[];
 }
 
 export interface RiskArea {

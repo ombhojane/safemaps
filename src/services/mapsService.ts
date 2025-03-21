@@ -145,6 +145,9 @@ export const computeRoutes = async (
       // Calculate overall risk score based on route points
       const riskScore = calculateRouteRiskScore(routePoints);
       
+      // Generate street view images for the route
+      const streetViewImages = fetchStreetViewImages(points);
+      
       return {
         id: `route-${index}`,
         source,
@@ -155,6 +158,7 @@ export const computeRoutes = async (
         duration: durationText,
         riskAreas: [], // Would be populated with real data
         path: generateSVGPath(points), // Create an SVG path for visualization
+        streetViewImages,
       };
     });
   } catch (error) {
@@ -221,4 +225,120 @@ const formatDuration = (seconds: number): string => {
     return `${hours} hr ${minutes} min`;
   }
   return `${minutes} min`;
+};
+
+// Function to fetch Street View images along a route
+export const fetchStreetViewImages = (points: { lat: number; lng: number }[], interval = 300): string[] => {
+  // Skip if no points or only one point
+  if (!points || points.length < 2) return [];
+  
+  const streetViewImages: string[] = [];
+  const MAX_IMAGES = 20; // Limit the number of images to avoid performance issues
+  
+  // Calculate total distance of the route
+  let totalDistance = 0;
+  let segmentDistances: number[] = [];
+  
+  for (let i = 0; i < points.length - 1; i++) {
+    const distance = calculateDistance(
+      points[i].lat, points[i].lng,
+      points[i + 1].lat, points[i + 1].lng
+    );
+    segmentDistances.push(distance);
+    totalDistance += distance;
+  }
+  
+  // Adjust interval based on route length to stay within MAX_IMAGES
+  const adjustedInterval = Math.max(interval, totalDistance / (MAX_IMAGES - 1));
+  
+  // Sample points at regular intervals
+  let accumulatedDistance = 0;
+  let nextSampleDistance = 0;
+  let currentSegment = 0;
+  let segmentStartDistance = 0;
+  
+  while (nextSampleDistance < totalDistance && 
+         currentSegment < segmentDistances.length && 
+         streetViewImages.length < MAX_IMAGES - 1) { // Reserve one image for destination
+    // Find the segment where the next sample point falls
+    while (currentSegment < segmentDistances.length && 
+           segmentStartDistance + segmentDistances[currentSegment] < nextSampleDistance) {
+      segmentStartDistance += segmentDistances[currentSegment];
+      currentSegment++;
+    }
+    
+    if (currentSegment >= segmentDistances.length) break;
+    
+    // Calculate the interpolation factor within the current segment
+    const segmentDistance = segmentDistances[currentSegment];
+    const distanceIntoSegment = nextSampleDistance - segmentStartDistance;
+    const ratio = segmentDistance > 0 ? distanceIntoSegment / segmentDistance : 0;
+    
+    // Interpolate to find the coordinates
+    const startPoint = points[currentSegment];
+    const endPoint = points[currentSegment + 1];
+    
+    const lat = startPoint.lat + ratio * (endPoint.lat - startPoint.lat);
+    const lng = startPoint.lng + ratio * (endPoint.lng - startPoint.lng);
+    
+    // Calculate heading (direction)
+    const heading = calculateHeading(
+      startPoint.lat, startPoint.lng,
+      endPoint.lat, endPoint.lng
+    );
+    
+    // Create Street View image URL
+    const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x300&location=${lat},${lng}&fov=90&heading=${heading}&pitch=0&key=${API_KEY}`;
+    streetViewImages.push(streetViewUrl);
+    
+    // Move to next sampling point
+    nextSampleDistance += adjustedInterval;
+  }
+  
+  // Add destination point
+  if (points.length > 1) {
+    const lastPoint = points[points.length - 1];
+    const secondLastPoint = points[points.length - 2];
+    const heading = calculateHeading(
+      secondLastPoint.lat, secondLastPoint.lng,
+      lastPoint.lat, lastPoint.lng
+    );
+    
+    const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x300&location=${lastPoint.lat},${lastPoint.lng}&fov=90&heading=${heading}&pitch=0&key=${API_KEY}`;
+    streetViewImages.push(streetViewUrl);
+  }
+  
+  return streetViewImages;
+};
+
+// Calculate the distance between two coordinates in meters using Haversine formula
+const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const R = 6371e3; // Earth radius in meters
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+            Math.cos(φ1) * Math.cos(φ2) *
+            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
+};
+
+// Calculate the heading (direction) between two points in degrees
+const calculateHeading = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+  const φ1 = lat1 * Math.PI / 180;
+  const φ2 = lat2 * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) -
+            Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+
+  let heading = Math.atan2(y, x) * 180 / Math.PI;
+  heading = (heading + 360) % 360; // Normalize to 0-360
+  
+  return heading;
 }; 

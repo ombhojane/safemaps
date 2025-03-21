@@ -2,10 +2,12 @@ import { useState } from "react";
 import Map from "@/components/Map";
 import RouteForm from "@/components/RouteForm";
 import RouteList from "@/components/RouteList";
+import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route } from "@/types";
 import { computeRoutes } from "@/services/mapsService";
-import { Shield, AlertTriangle } from "lucide-react";
+import { Shield, AlertTriangle, MapPin, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const Index = () => {
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -103,17 +105,10 @@ const Index = () => {
             
             {/* Map section */}
             <div className="lg:col-span-8 space-y-6">
-              <Map 
-                routes={routes} 
-                selectedRouteId={selectedRouteId}
-                onRouteSelect={handleRouteSelect}
-                className="h-[500px]"
-              />
-              
               {selectedRoute && (
                 <div className="bg-card rounded-lg border p-4 shadow-sm">
                   <h2 className="text-lg font-medium mb-3">Route Details</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground mb-1">Distance</h3>
                       <p className="text-lg">{selectedRoute.distance}</p>
@@ -127,6 +122,33 @@ const Index = () => {
                       <p className="text-lg">{selectedRoute.riskScore.toFixed(1)}/10</p>
                     </div>
                   </div>
+                  
+                  <Tabs defaultValue="map" className="w-full">
+                    <TabsList className="mb-4">
+                      <TabsTrigger value="map" className="flex items-center gap-1">
+                        <MapPin className="h-4 w-4" />
+                        <span>Map</span>
+                      </TabsTrigger>
+                      <TabsTrigger value="streetview" className="flex items-center gap-1">
+                        <ImageIcon className="h-4 w-4" />
+                        <span>Street View</span>
+                      </TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="map">
+                      <Map 
+                        routes={routes} 
+                        selectedRouteId={selectedRouteId}
+                        onRouteSelect={handleRouteSelect}
+                        className="h-[500px]"
+                      />
+                    </TabsContent>
+                    <TabsContent value="streetview">
+                      <StreetViewGallery 
+                        images={selectedRoute.streetViewImages || []}
+                        className="mb-4"
+                      />
+                    </TabsContent>
+                  </Tabs>
                 </div>
               )}
             </div>
