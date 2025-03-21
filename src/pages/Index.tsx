@@ -1,61 +1,48 @@
-
 import { useState } from "react";
 import Map from "@/components/Map";
 import RouteForm from "@/components/RouteForm";
-import RouteCard from "@/components/RouteCard";
-import RiskAreaDetails from "@/components/RiskAreaDetails";
-import RouteRecommendation from "@/components/RouteRecommendation";
-import { Location, Route, RouteAnalysis } from "@/types";
-import routeService from "@/services/routeService";
+import RouteList from "@/components/RouteList";
+import { Location, Route } from "@/types";
+import { computeRoutes } from "@/services/mapsService";
 import { Shield, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const Index = () => {
   const [routes, setRoutes] = useState<Route[]>([]);
-  const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
-  const [analysis, setAnalysis] = useState<RouteAnalysis | null>(null);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleRouteSubmit = async (source: Location, destination: Location) => {
     setIsLoading(true);
-    setSelectedRoute(null);
-    setAnalysis(null);
+    setError(null);
+    setRoutes([]);
+    setSelectedRouteId(undefined);
     
     try {
-      const fetchedRoutes = await routeService.getRoutes(source, destination);
+      // Fetch routes using the Routes API via our mapsService
+      const fetchedRoutes = await computeRoutes(source, destination);
       setRoutes(fetchedRoutes);
       
       // Auto-select the safest route (lowest risk score)
-      const safestRoute = [...fetchedRoutes].sort((a, b) => a.riskScore - b.riskScore)[0];
-      setSelectedRoute(safestRoute);
-      
-      // Get analysis for the selected route
-      analyzeRoute(safestRoute.id);
+      if (fetchedRoutes.length > 0) {
+        const safestRoute = [...fetchedRoutes].sort((a, b) => a.riskScore - b.riskScore)[0];
+        setSelectedRouteId(safestRoute.id);
+      }
     } catch (error) {
       console.error("Error fetching routes:", error);
+      setError("Failed to fetch routes. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const analyzeRoute = async (routeId: string) => {
-    setIsAnalyzing(true);
-    
-    try {
-      const routeAnalysis = await routeService.analyzeRoute(routeId);
-      setAnalysis(routeAnalysis);
-    } catch (error) {
-      console.error("Error analyzing route:", error);
-    } finally {
-      setIsAnalyzing(false);
-    }
+  const handleRouteSelect = (routeId: string) => {
+    setSelectedRouteId(routeId);
   };
 
-  const handleRouteSelect = (route: Route) => {
-    setSelectedRoute(route);
-    setAnalysis(null);
-    analyzeRoute(route.id);
-  };
+  // Get the selected route object
+  const selectedRoute = routes.find(route => route.id === selectedRouteId);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -72,6 +59,10 @@ const Index = () => {
               <AlertTriangle className="h-4 w-4 mr-1.5" />
               <span>Risk Detection Active</span>
             </div>
+
+            <Button variant="outline" className="hidden md:flex">
+              New Maps
+            </Button>
           </div>
         </div>
       </header>
@@ -83,8 +74,14 @@ const Index = () => {
           <RouteForm onSubmit={handleRouteSubmit} isLoading={isLoading} />
         </div>
         
+        {error && (
+          <div className="mb-6 p-4 bg-destructive/15 text-destructive rounded-lg">
+            <p>{error}</p>
+          </div>
+        )}
+        
         {isLoading ? (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center py-12">
             <div className="text-center">
               <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
               <h3 className="text-lg font-medium mb-2">Analyzing Routes</h3>
@@ -94,62 +91,40 @@ const Index = () => {
             </div>
           </div>
         ) : routes.length > 0 ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Route cards */}
-            <div className="lg:col-span-1 space-y-4">
-              <h2 className="text-lg font-medium mb-3">Available Routes</h2>
-              
-              <div className="space-y-4">
-                {routes.map((route) => (
-                  <RouteCard
-                    key={route.id}
-                    route={route}
-                    isSelected={selectedRoute?.id === route.id}
-                    onSelect={handleRouteSelect}
-                  />
-                ))}
-              </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Route list */}
+            <div className="lg:col-span-4">
+              <RouteList 
+                routes={routes} 
+                selectedRouteId={selectedRouteId} 
+                onRouteSelect={handleRouteSelect} 
+              />
             </div>
             
-            {/* Map and analysis */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Map */}
-              <div className="h-[400px] md:h-[500px] bg-muted rounded-lg overflow-hidden">
-                <Map 
-                  route={selectedRoute} 
-                  riskAreas={selectedRoute?.riskAreas}
-                  isLoading={isAnalyzing && !analysis} 
-                />
-              </div>
+            {/* Map section */}
+            <div className="lg:col-span-8 space-y-6">
+              <Map 
+                routes={routes} 
+                selectedRouteId={selectedRouteId}
+                onRouteSelect={handleRouteSelect}
+                className="h-[500px]"
+              />
               
-              {/* Analysis section */}
               {selectedRoute && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Route recommendation */}
-                  <div>
-                    <h2 className="text-lg font-medium mb-3">Route Recommendation</h2>
-                    {analysis ? (
-                      <RouteRecommendation analysis={analysis} />
-                    ) : (
-                      <div className="rounded-lg bg-muted flex items-center justify-center p-8">
-                        <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mr-4"></div>
-                        <p>Analyzing route safety...</p>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Risk areas */}
-                  <div>
-                    <h2 className="text-lg font-medium mb-3">Risk Areas</h2>
-                    <div className="bg-card rounded-lg border shadow-sm max-h-[300px] overflow-y-auto">
-                      {analysis ? (
-                        <RiskAreaDetails riskAreas={analysis.route.riskAreas} />
-                      ) : (
-                        <div className="rounded-lg bg-muted flex items-center justify-center p-8">
-                          <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin mr-4"></div>
-                          <p>Detecting risk areas...</p>
-                        </div>
-                      )}
+                <div className="bg-card rounded-lg border p-4 shadow-sm">
+                  <h2 className="text-lg font-medium mb-3">Route Details</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-1">Distance</h3>
+                      <p className="text-lg">{selectedRoute.distance}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-1">Duration</h3>
+                      <p className="text-lg">{selectedRoute.duration}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-1">Risk Score</h3>
+                      <p className="text-lg">{selectedRoute.riskScore.toFixed(1)}/10</p>
                     </div>
                   </div>
                 </div>
@@ -157,7 +132,7 @@ const Index = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center py-12">
             <div className="text-center max-w-md">
               <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Shield className="h-10 w-10 text-primary" />

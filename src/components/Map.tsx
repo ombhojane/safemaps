@@ -1,314 +1,217 @@
-
-import React, { useEffect, useRef, useState } from 'react';
-import { Route, RiskArea } from '@/types';
-import { cn } from '@/lib/utils';
-import { LucideInfo, MapPin, Navigation } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useEffect, useRef, useState } from "react";
+import { Route, Location } from "@/types";
+import { loadGoogleMapsApi, decodePolyline } from "@/services/mapsService";
+import { cn } from "@/lib/utils";
 
 interface MapProps {
-  route?: Route | null;
-  riskAreas?: RiskArea[];
-  isLoading?: boolean;
+  routes: Route[];
+  selectedRouteId?: string;
+  onRouteSelect?: (routeId: string) => void;
   className?: string;
 }
 
-const Map = ({ route, riskAreas, isLoading, className }: MapProps) => {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const [showDemo, setShowDemo] = useState<boolean>(true);
-  
-  // This is a simulated map with a static image for the demo
-  // In a real implementation, this would use a mapping library like Mapbox, Google Maps, or Leaflet
-  
+const Map = ({
+  routes,
+  selectedRouteId,
+  onRouteSelect,
+  className,
+}: MapProps) => {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [googleMap, setGoogleMap] = useState<google.maps.Map | null>(null);
+  const routePolylinesRef = useRef<google.maps.Polyline[]>([]);
+  const markersRef = useRef<google.maps.Marker[]>([]);
+
+  // Load Google Maps API
   useEffect(() => {
-    // Simulate map loading
-    const timer = setTimeout(() => {
-      setShowDemo(false);
-    }, 1500);
-    
-    return () => clearTimeout(timer);
+    const loadMap = async () => {
+      try {
+        await loadGoogleMapsApi();
+        setMapLoaded(true);
+      } catch (error) {
+        console.error("Failed to load Google Maps API", error);
+      }
+    };
+
+    loadMap();
   }, []);
 
-  // Calculate the risk color based on risk score
-  const getRiskColor = (score?: number) => {
-    if (!score) return 'bg-gray-400';
-    if (score < 3) return 'bg-risk-low';
-    if (score < 6) return 'bg-risk-medium';
-    return 'bg-risk-high';
-  };
+  // Initialize map once API is loaded
+  useEffect(() => {
+    if (!mapLoaded || !mapRef.current) return;
 
-  const getRiskLevelColor = (level: 'low' | 'medium' | 'high') => {
-    switch (level) {
-      case 'low': return 'bg-risk-low';
-      case 'medium': return 'bg-risk-medium';
-      case 'high': return 'bg-risk-high';
-      default: return 'bg-gray-400';
-    }
-  };
+    // Create map centered on San Francisco (default location)
+    const map = new google.maps.Map(mapRef.current, {
+      center: { lat: 37.7749, lng: -122.4194 },
+      zoom: 13,
+      mapTypeControl: true,
+      fullscreenControl: true,
+      streetViewControl: true,
+      styles: [
+        {
+          "featureType": "poi",
+          "stylers": [{ "visibility": "simplified" }]
+        },
+        {
+          "featureType": "road",
+          "elementType": "labels.icon",
+          "stylers": [{ "visibility": "off" }]
+        },
+        {
+          "featureType": "transit",
+          "stylers": [{ "visibility": "off" }]
+        }
+      ]
+    });
 
-  // Generate random road paths for a more realistic map appearance
-  const generateRoadPaths = () => {
-    const paths = [];
-    const roadCount = 8;
+    setGoogleMap(map);
+  }, [mapLoaded]);
+
+  // Update routes on the map
+  useEffect(() => {
+    if (!googleMap || !routes.length) return;
+
+    // Clear existing route polylines
+    routePolylinesRef.current.forEach(polyline => polyline.setMap(null));
+    routePolylinesRef.current = [];
     
-    for (let i = 0; i < roadCount; i++) {
-      const startX = Math.random() * 100;
-      const startY = Math.random() * 100;
-      const controlX1 = Math.random() * 100;
-      const controlY1 = Math.random() * 100;
-      const controlX2 = Math.random() * 100;
-      const controlY2 = Math.random() * 100;
-      const endX = Math.random() * 100;
-      const endY = Math.random() * 100;
+    // Clear existing markers
+    markersRef.current.forEach(marker => marker.setMap(null));
+    markersRef.current = [];
+
+    // Create bounds to contain all routes
+    const bounds = new google.maps.LatLngBounds();
+
+    // Create polylines for each route
+    routes.forEach((route, index) => {
+      // Decode polyline if needed
+      const points = route.points.map(point => point.coordinates);
       
-      paths.push({
-        id: `road-${i}`,
-        path: `M ${startX}% ${startY}% C ${controlX1}% ${controlY1}%, ${controlX2}% ${controlY2}%, ${endX}% ${endY}%`,
-        width: Math.random() * 1.5 + 0.5
-      });
-    }
-    
-    return paths;
-  };
-
-  // Generate random building shapes
-  const generateBuildings = () => {
-    const buildings = [];
-    const buildingCount = 20;
-    
-    for (let i = 0; i < buildingCount; i++) {
-      const x = Math.random() * 90 + 5;
-      const y = Math.random() * 90 + 5;
-      const size = Math.random() * 6 + 2;
-      const opacity = Math.random() * 0.3 + 0.1;
+      // Create a polyline for the route
+      const isSelected = route.id === selectedRouteId;
       
-      buildings.push({
-        id: `building-${i}`,
-        x: `${x}%`,
-        y: `${y}%`,
-        width: `${size}%`,
-        height: `${size * (Math.random() * 0.5 + 0.5)}%`,
-        opacity
+      const polyline = new google.maps.Polyline({
+        path: points,
+        geodesic: true,
+        strokeColor: getRiskColor(route.riskScore, isSelected),
+        strokeOpacity: isSelected ? 1.0 : 0.7,
+        strokeWeight: isSelected ? 5 : 3,
+        map: googleMap,
+        zIndex: isSelected ? 10 : index
       });
-    }
-    
-    return buildings;
-  };
+      
+      // Add click handler for route selection
+      if (onRouteSelect) {
+        polyline.addListener("click", () => {
+          onRouteSelect(route.id);
+        });
+      }
+      
+      // Store the polyline for later cleanup
+      routePolylinesRef.current.push(polyline);
+      
+      // Extend bounds to include this route
+      points.forEach(point => {
+        bounds.extend(point);
+      });
+    });
 
-  const roads = generateRoadPaths();
-  const buildings = generateBuildings();
+    // Add markers for source and destination
+    if (routes.length > 0) {
+      const { source, destination } = routes[0]; // All routes have the same source/destination
+      
+      // Source marker
+      const sourceMarker = new google.maps.Marker({
+        position: source.coordinates,
+        map: googleMap,
+        title: "Starting Point",
+        animation: google.maps.Animation.DROP,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: "#22c55e", // Green
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 8
+        }
+      });
+      markersRef.current.push(sourceMarker);
+      
+      // Destination marker
+      const destinationMarker = new google.maps.Marker({
+        position: destination.coordinates,
+        map: googleMap,
+        title: "Destination",
+        animation: google.maps.Animation.DROP,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: "#3b82f6", // Blue
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+          scale: 8
+        }
+      });
+      markersRef.current.push(destinationMarker);
+      
+      // Fit map to bounds
+      googleMap.fitBounds(bounds, 50); // 50px padding
+    }
+  }, [googleMap, routes, selectedRouteId, onRouteSelect]);
+
+  // Update selected route when it changes
+  useEffect(() => {
+    if (!googleMap || !routes.length) return;
+    
+    // Update polyline styles based on selection
+    routePolylinesRef.current.forEach((polyline, index) => {
+      const route = routes[index];
+      const isSelected = route.id === selectedRouteId;
+      
+      polyline.setOptions({
+        strokeColor: getRiskColor(route.riskScore, isSelected),
+        strokeOpacity: isSelected ? 1.0 : 0.7,
+        strokeWeight: isSelected ? 5 : 3,
+        zIndex: isSelected ? 10 : index
+      });
+    });
+  }, [googleMap, routes, selectedRouteId]);
+
+  // Helper function to get color based on risk score
+  const getRiskColor = (riskScore: number, isSelected: boolean): string => {
+    // Risk score categories:
+    // 0-3.3: Low risk (green)
+    // 3.4-6.6: Medium risk (yellow)
+    // 6.7-10: High risk (red)
+    
+    if (riskScore <= 3.3) {
+      return isSelected ? "#16a34a" : "#22c55e"; // Green
+    } else if (riskScore <= 6.6) {
+      return isSelected ? "#ca8a04" : "#eab308"; // Yellow
+    } else {
+      return isSelected ? "#dc2626" : "#ef4444"; // Red
+    }
+  };
 
   return (
-    <div 
-      ref={mapContainerRef} 
-      className={cn("relative w-full h-full rounded-lg overflow-hidden shadow-lg", className)}
-    >
-      {isLoading ? (
-        <div className="absolute inset-0 flex items-center justify-center bg-muted">
-          <div className="flex flex-col items-center space-y-4">
-            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-muted-foreground animate-pulse">Loading map...</p>
-          </div>
+    <div className={cn("h-[400px] w-full rounded-lg overflow-hidden", className)}>
+      {!mapLoaded && (
+        <div className="h-full w-full flex items-center justify-center bg-muted">
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
         </div>
-      ) : (
-        <>
-          {/* Demo map background */}
-          <div className="absolute inset-0 bg-[#f8f9fa] dark:bg-[#242526]">
-            {/* Grid pattern to simulate a map */}
-            <div className="absolute inset-0" style={{ 
-              backgroundImage: `linear-gradient(rgba(0,0,0,0.03) 1px, transparent 1px), 
-                              linear-gradient(90deg, rgba(0,0,0,0.03) 1px, transparent 1px)`,
-              backgroundSize: '20px 20px' 
-            }}></div>
-            
-            {/* Buildings in the background */}
-            <div className="absolute inset-0">
-              {buildings.map(building => (
-                <div
-                  key={building.id}
-                  className="absolute bg-gray-300 dark:bg-gray-700 rounded-sm"
-                  style={{
-                    left: building.x,
-                    top: building.y,
-                    width: building.width,
-                    height: building.height,
-                    opacity: building.opacity
-                  }}
-                ></div>
-              ))}
-            </div>
-            
-            {/* Road network */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 2 }}>
-              {roads.map(road => (
-                <path 
-                  key={road.id}
-                  d={road.path}
-                  fill="none"
-                  stroke="rgba(150,150,150,0.2)"
-                  strokeWidth={road.width}
-                  strokeLinecap="round"
-                />
-              ))}
-            </svg>
-          </div>
-
-          {/* Simulated map content */}
-          {route && (
-            <div className="absolute inset-0 p-4">
-              {/* Source marker */}
-              <div className="absolute z-20 animate-pulse-slow" style={{ 
-                left: '20%', 
-                top: '60%',
-                transform: 'translate(-50%, -50%)'
-              }}>
-                <div className="relative">
-                  <div className="absolute -inset-2 bg-primary/20 rounded-full animate-ping opacity-50"></div>
-                  <div className="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-md flex items-center justify-center">
-                    <Navigation className="w-3 h-3 text-white" />
-                  </div>
-                </div>
-                <div className="glassmorphism mt-2 px-2 py-1 rounded-md text-xs font-medium text-center shadow-sm">
-                  {route.source.name}
-                </div>
-              </div>
-
-              {/* Destination marker */}
-              <div className="absolute z-20" style={{ 
-                left: '75%', 
-                top: '30%',
-                transform: 'translate(-50%, -50%)'
-              }}>
-                <div className="relative">
-                  <div className="absolute -inset-3 bg-primary/20 rounded-full animate-ping opacity-50"></div>
-                  <div className="w-6 h-6 bg-primary rounded-full border-2 border-white shadow-md flex items-center justify-center">
-                    <MapPin className="w-3 h-3 text-white" />
-                  </div>
-                </div>
-                <div className="glassmorphism mt-2 px-2 py-1 rounded-md text-xs font-medium text-center shadow-sm">
-                  {route.destination.name}
-                </div>
-              </div>
-
-              {/* Route path with intermediate points */}
-              <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 5 }}>
-                {/* Main route path */}
-                <path 
-                  d="M 20% 60% C 35% 55%, 50% 40%, 65% 35% S 70% 32%, 75% 30%"
-                  fill="none"
-                  stroke="#3b82f6"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  className="route-path"
-                />
-                
-                {/* Route highlight effect */}
-                <path 
-                  d="M 20% 60% C 35% 55%, 50% 40%, 65% 35% S 70% 32%, 75% 30%"
-                  fill="none"
-                  stroke="rgba(59, 130, 246, 0.3)"
-                  strokeWidth="8"
-                  strokeLinecap="round"
-                  filter="blur(4px)"
-                />
-                
-                {/* Animated route path */}
-                <path 
-                  d="M 20% 60% C 35% 55%, 50% 40%, 65% 35% S 70% 32%, 75% 30%"
-                  fill="none"
-                  stroke="white"
-                  strokeWidth="4"
-                  strokeDasharray="1,30"
-                  strokeLinecap="round"
-                  className="animate-dash"
-                />
-                
-                {/* Route intermediate points */}
-                {[25, 35, 45, 55, 65].map((position, i) => {
-                  // Calculate position along the curve 
-                  // This is a simplified version, in a real app you'd use actual route points
-                  const x = position;
-                  const y = 60 - (position - 20) * 0.6;
-                  
-                  // Assign a risk value to some points
-                  const hasRisk = Math.random() > 0.5;
-                  const riskScore = hasRisk ? Math.floor(Math.random() * 10) : undefined;
-                  
-                  return (
-                    <circle 
-                      key={`point-${i}`}
-                      cx={`${x}%`}
-                      cy={`${y}%`}
-                      r="5"
-                      className={cn(
-                        "transition-colors duration-300",
-                        hasRisk ? getRiskColor(riskScore) : "fill-primary"
-                      )}
-                      stroke="white"
-                      strokeWidth="2"
-                    />
-                  );
-                })}
-              </svg>
-
-              {/* Risk areas */}
-              {riskAreas?.map((area, index) => (
-                <TooltipProvider key={area.id} delayDuration={0}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div 
-                        className="absolute cursor-pointer animate-float z-30"
-                        style={{ 
-                          left: `${25 + index * 12}%`, 
-                          top: `${45 + (index % 3) * 8}%`,
-                          transform: 'translate(-50%, -50%)',
-                          animationDelay: `${index * 0.5}s`
-                        }}
-                      >
-                        <div className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center shadow-lg border-2 border-white",
-                          getRiskLevelColor(area.riskLevel)
-                        )}>
-                          <MapPin className="w-4 h-4 text-white" />
-                        </div>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2">
-                          <span className={cn(
-                            "w-3 h-3 rounded-full", 
-                            getRiskLevelColor(area.riskLevel)
-                          )}></span>
-                          <span className="font-medium capitalize">{area.riskLevel} Risk Area</span>
-                        </div>
-                        <p className="text-sm text-muted-foreground">{area.description}</p>
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ))}
-            </div>
-          )}
-
-          {/* Map overlay for glass effect */}
-          <div className="absolute inset-0 pointer-events-none bg-gradient-to-b from-transparent to-background/10 rounded-lg"></div>
-
-          {/* Show starting instructions if no route */}
-          {!route && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center space-y-3 p-6 max-w-md mx-auto">
-                <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-                  <MapPin className="w-10 h-10 text-primary" />
-                </div>
-                <h3 className="text-xl font-semibold">Enter your route</h3>
-                <p className="text-muted-foreground">
-                  Enter your source and destination to analyze potential risk areas along different routes.
-                </p>
-              </div>
-            </div>
-          )}
-        </>
       )}
+      <div 
+        ref={mapRef} 
+        className={cn(
+          "h-full w-full", 
+          !mapLoaded && "opacity-0"
+        )} 
+      />
+      
+      {/* Add Google attribution if required by Google Maps Platform policy */}
+      <div className="text-xs text-muted-foreground mt-1 text-right">
+        Map data ©{new Date().getFullYear()} Google
+      </div>
     </div>
   );
 };

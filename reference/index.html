@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nearby Search</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🔍</text></svg>">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Nearby Search</h1>
+      <p class="tagline">Find phone numbers anywhere</p>
+    </header>
+    
+    <main>
+      <div class="search-container">
+        <div class="search-by-name">
+          <h2>Search by Place Name</h2>
+          <div class="search-box">
+            <input type="text" id="place-search" placeholder="Enter a place name (e.g., Eiffel Tower)">
+            <button id="search-btn">Search</button>
+          </div>
+        </div>
+        
+        <div class="search-by-coordinates">
+          <h2>Search by Coordinates</h2>
+          <div class="coordinates-input">
+            <input type="number" id="latitude" placeholder="Latitude" step="0.0000001">
+            <input type="number" id="longitude" placeholder="Longitude" step="0.0000001">
+            <button id="coordinates-btn">Search</button>
+          </div>
+        </div>
+        
+        <div class="use-current-location">
+          <button id="current-location-btn">Use Current Location</button>
+        </div>
+      </div>
+      
+      <div id="map-container">
+        <div id="map"></div>
+      </div>
+      
+      <div id="nearby-places-container" class="hidden">
+        <h2>Nearby Places</h2>
+        <div id="nearby-places-list"></div>
+      </div>
+      
+      <div id="results-container" class="hidden">
+        <h2 id="place-name"></h2>
+        <p id="place-address"></p>
+        <p id="place-phone"></p>
+        
+        <div id="photos-container">
+          <!-- Photos will be added here dynamically -->
+        </div>
+      </div>
+      
+      <div id="loading" class="hidden">Loading...</div>
+      <div id="error-message" class="hidden"></div>
+    </main>
+    
+    <footer>
+      <p>Powered by Google Places API | <span class="heart">♥</span> SafeMaps 2023</p>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+  <script async
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBGoirbzusGUGwYSXC8pcLpsQMJAmTxIcg&libraries=places,marker&callback=initMap">
+  </script>
+</body>
+</html> 

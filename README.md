@@ -1,4 +1,67 @@
-# Welcome to your Lovable project
+# SafeMaps Application
+
+A React application that helps users find safe routes between locations.
+
+## Features
+
+- Google Places Autocomplete for location search
+- Safe route planning and analysis
+- Interactive maps with risk visualization
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js (v14.0.0 or later)
+- npm or yarn
+- Google Places API key
+
+### Installation
+
+1. Clone the repository
+   ```bash
+   git clone https://github.com/yourusername/safemaps.git
+   cd safemaps
+   ```
+
+2. Install dependencies
+   ```bash
+   npm install
+   # or
+   yarn
+   ```
+
+3. Set up environment variables
+   
+   Create a `.env` file in the root directory with the following content:
+   ```
+   VITE_GOOGLE_MAPS_API_KEY=your_google_places_api_key
+   ```
+   
+   You can obtain a Google Places API key from the [Google Cloud Console](https://console.cloud.google.com/). Make sure to enable the Places API for your project.
+
+4. Start the development server
+   ```bash
+   npm run dev
+   # or
+   yarn dev
+   ```
+
+### Google Places API Setup
+
+1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Navigate to APIs & Services > Library
+4. Search for and enable the "Places API"
+5. Go to APIs & Services > Credentials
+6. Create an API key and restrict it to the Places API for security
+7. Copy the API key to your `.env` file
+
+## Usage
+
+1. Enter your starting point and destination in the search form
+2. The application will provide route options with safety analysis
+3. Select a route to view detailed safety information and proceed with navigation
 
 ## Project info
 

@@ -1,4 +1,3 @@
-
 export interface Location {
   name: string;
   coordinates: {
@@ -77,4 +76,13 @@ export interface Building {
   width: string;
   height: string;
   opacity: number;
+}
+
+// Add Google Maps related window type augmentation
+declare global {
+  interface Window {
+    google: {
+      maps: any;
+    };
+  }
 }

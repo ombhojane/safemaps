@@ -1,5 +1,5 @@
-
 import { Location, Route, RiskArea, RouteAnalysis, RoutePoint, EmergencyContact } from "@/types";
+import { v4 as uuidv4 } from "uuid";
 
 // Demo data service
 class RouteService {

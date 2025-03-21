@@ -1,14 +1,15 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { Search, MapPin, ArrowRight } from "lucide-react";
 import { Location } from "@/types";
+import { cn } from "@/lib/utils";
+import { PlaceAutocomplete } from "@/components/ui/PlaceAutocomplete";
+import { getPlaceDetails, convertToLocation } from "@/services/placesService";
 
 const formSchema = z.object({
   source: z.string().min(2, {
@@ -26,6 +27,9 @@ interface RouteFormProps {
 
 const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
   const [expanded, setExpanded] = useState(false);
+  const [sourcePlaceId, setSourcePlaceId] = useState<string | undefined>();
+  const [destinationPlaceId, setDestinationPlaceId] = useState<string | undefined>();
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -35,21 +39,62 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
     },
   });
 
-  const handleSubmit = (values: z.infer<typeof formSchema>) => {
-    // In a real app, we would geocode these addresses to get coordinates
-    // For this demo, we'll use dummy coordinates
-    const source: Location = {
-      name: values.source,
-      coordinates: { lat: 37.7749, lng: -122.4194 } // San Francisco coordinates
-    };
-    
-    const destination: Location = {
-      name: values.destination,
-      coordinates: { lat: 37.7833, lng: -122.4167 } // Slightly north of SF
-    };
-    
-    toast.success("Route request submitted");
-    onSubmit(source, destination);
+  const handleSubmit = async (values: z.infer<typeof formSchema>) => {
+    try {
+      setIsProcessing(true);
+      
+      let sourceLocation: Location | null = null;
+      let destinationLocation: Location | null = null;
+      
+      // If we have placeIds, get detailed information from Google Places API
+      if (sourcePlaceId) {
+        const sourceDetails = await getPlaceDetails(sourcePlaceId);
+        if (sourceDetails) {
+          sourceLocation = convertToLocation(sourceDetails);
+        }
+      }
+      
+      if (destinationPlaceId) {
+        const destinationDetails = await getPlaceDetails(destinationPlaceId);
+        if (destinationDetails) {
+          destinationLocation = convertToLocation(destinationDetails);
+        }
+      }
+      
+      // If we couldn't get detailed location info, use fallback coordinates
+      if (!sourceLocation) {
+        sourceLocation = {
+          name: values.source,
+          coordinates: { lat: 37.7749, lng: -122.4194 } // San Francisco coordinates as fallback
+        };
+      }
+      
+      if (!destinationLocation) {
+        destinationLocation = {
+          name: values.destination,
+          coordinates: { lat: 37.7833, lng: -122.4167 } // Slightly north of SF as fallback
+        };
+      }
+      
+      toast.success("Route request submitted");
+      onSubmit(sourceLocation, destinationLocation);
+    } catch (error) {
+      console.error("Error processing route request:", error);
+      toast.error("Failed to process route request. Please try again.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Handle place selection from autocomplete
+  const handleSourceSelect = (value: string, placeId?: string) => {
+    form.setValue("source", value);
+    setSourcePlaceId(placeId);
+  };
+  
+  const handleDestinationSelect = (value: string, placeId?: string) => {
+    form.setValue("destination", value);
+    setDestinationPlaceId(placeId);
   };
 
   return (
@@ -88,7 +133,12 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
                         <div className="ml-16 flex-1">
                           <FormLabel>Starting point</FormLabel>
                           <FormControl>
-                            <Input placeholder="Enter your starting location" {...field} />
+                            <PlaceAutocomplete 
+                              value={field.value}
+                              onChange={handleSourceSelect}
+                              placeholder="Enter your starting location" 
+                              disabled={isLoading || isProcessing}
+                            />
                           </FormControl>
                         </div>
                       </div>
@@ -110,7 +160,12 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
                         <div className="ml-16 flex-1">
                           <FormLabel>Destination</FormLabel>
                           <FormControl>
-                            <Input placeholder="Enter your destination" {...field} />
+                            <PlaceAutocomplete 
+                              value={field.value}
+                              onChange={handleDestinationSelect}
+                              placeholder="Enter your destination" 
+                              disabled={isLoading || isProcessing}
+                            />
                           </FormControl>
                         </div>
                       </div>
@@ -123,9 +178,9 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
                 <Button 
                   type="submit" 
                   className="px-8"
-                  disabled={isLoading}
+                  disabled={isLoading || isProcessing}
                 >
-                  {isLoading ? (
+                  {isLoading || isProcessing ? (
                     <>
                       <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
                       Analyzing Routes...
@@ -140,7 +195,5 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
     </div>
   );
 };
-
-import { cn } from "@/lib/utils";
 
 export default RouteForm;
