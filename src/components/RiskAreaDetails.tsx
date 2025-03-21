@@ -3,6 +3,8 @@ import { RiskArea } from "@/types";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Info } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import EmergencyContacts from "./EmergencyContacts";
 
 interface RiskAreaDetailsProps {
   riskAreas: RiskArea[];
@@ -56,7 +58,7 @@ const RiskAreaDetails = ({ riskAreas }: RiskAreaDetailsProps) => {
                 <AlertTriangle className={cn("h-5 w-5", getRiskColor(area.riskLevel))} />
               </div>
               
-              <div className="space-y-1">
+              <div className="space-y-1 w-full">
                 <div className="flex items-center">
                   <h4 className="font-medium capitalize">{area.riskLevel} Risk Area</h4>
                   <span className={cn(
@@ -73,6 +75,18 @@ const RiskAreaDetails = ({ riskAreas }: RiskAreaDetailsProps) => {
                 <div className="flex items-center text-xs mt-2 text-muted-foreground">
                   <span>Location: {area.location.lat.toFixed(6)}, {area.location.lng.toFixed(6)}</span>
                 </div>
+                
+                {/* Emergency Contacts Section */}
+                <Accordion type="single" collapsible className="w-full mt-3">
+                  <AccordionItem value="emergency-contacts" className="border-0">
+                    <AccordionTrigger className="py-2 text-sm font-medium hover:no-underline">
+                      Emergency Contacts
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <EmergencyContacts contacts={area.emergencyContacts || []} />
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
               </div>
             </div>
           </CardContent>

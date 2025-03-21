@@ -42,6 +42,16 @@ export interface RiskArea {
   };
   riskLevel: 'low' | 'medium' | 'high';
   description: string;
+  emergencyContacts?: EmergencyContact[];
+}
+
+export interface EmergencyContact {
+  id: string;
+  name: string;
+  type: 'hospital' | 'police' | 'fire' | 'roadside';
+  phoneNumber: string;
+  address: string;
+  distance: string;
 }
 
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -68,4 +78,3 @@ export interface Building {
   height: string;
   opacity: number;
 }
-

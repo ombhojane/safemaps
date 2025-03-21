@@ -1,5 +1,5 @@
 
-import { Location, Route, RiskArea, RouteAnalysis, RoutePoint } from "@/types";
+import { Location, Route, RiskArea, RouteAnalysis, RoutePoint, EmergencyContact } from "@/types";
 
 // Demo data service
 class RouteService {
@@ -156,11 +156,100 @@ class RouteService {
           lng: baseLng + lngOffset
         },
         riskLevel,
-        description: riskReasons[randomReasonIndex]
+        description: riskReasons[randomReasonIndex],
+        emergencyContacts: this.generateEmergencyContacts(riskLevel)
       });
     }
     
     return riskAreas;
+  }
+
+  private generateEmergencyContacts(riskLevel: 'low' | 'medium' | 'high'): EmergencyContact[] {
+    const contacts: EmergencyContact[] = [];
+    
+    // Generate more emergency contacts for higher risk areas
+    const contactCount = riskLevel === 'low' ? 2 : 
+                        riskLevel === 'medium' ? 3 : 4;
+    
+    const hospitalNames = [
+      "City General Hospital",
+      "Memorial Medical Center",
+      "University Health System",
+      "Community Regional Hospital",
+      "Mercy Medical Center"
+    ];
+    
+    const policeStations = [
+      "Central Police Station",
+      "Downtown Precinct",
+      "Northern District Police",
+      "Highway Patrol Division",
+      "County Sheriff's Office"
+    ];
+    
+    const fireStations = [
+      "City Fire Station #1",
+      "Central Fire Department",
+      "Volunteer Fire Brigade",
+      "Metropolitan Fire Service",
+      "Rescue Fire Department"
+    ];
+    
+    const roadsideServices = [
+      "AAA Roadside Assistance",
+      "24/7 Towing Service",
+      "Emergency Road Help",
+      "Rapid Response Towing",
+      "Highway Rescue Services"
+    ];
+    
+    // Always add at least one hospital
+    contacts.push({
+      id: `hospital-${Math.floor(Math.random() * 1000)}`,
+      name: hospitalNames[Math.floor(Math.random() * hospitalNames.length)],
+      type: 'hospital',
+      phoneNumber: `(${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+      address: `${Math.floor(Math.random() * 1000) + 100} Medical Center Blvd, San Francisco, CA`,
+      distance: `${(Math.random() * 2 + 0.5).toFixed(1)} km`
+    });
+    
+    // Add police station
+    if (contactCount >= 2) {
+      contacts.push({
+        id: `police-${Math.floor(Math.random() * 1000)}`,
+        name: policeStations[Math.floor(Math.random() * policeStations.length)],
+        type: 'police',
+        phoneNumber: `(${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+        address: `${Math.floor(Math.random() * 300) + 100} Justice Ave, San Francisco, CA`,
+        distance: `${(Math.random() * 3 + 0.8).toFixed(1)} km`
+      });
+    }
+    
+    // Add fire station
+    if (contactCount >= 3) {
+      contacts.push({
+        id: `fire-${Math.floor(Math.random() * 1000)}`,
+        name: fireStations[Math.floor(Math.random() * fireStations.length)],
+        type: 'fire',
+        phoneNumber: `(${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+        address: `${Math.floor(Math.random() * 200) + 100} Rescue St, San Francisco, CA`,
+        distance: `${(Math.random() * 2.5 + 1).toFixed(1)} km`
+      });
+    }
+    
+    // Add roadside assistance
+    if (contactCount >= 4) {
+      contacts.push({
+        id: `roadside-${Math.floor(Math.random() * 1000)}`,
+        name: roadsideServices[Math.floor(Math.random() * roadsideServices.length)],
+        type: 'roadside',
+        phoneNumber: `(${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+        address: `${Math.floor(Math.random() * 500) + 100} Highway Blvd, San Francisco, CA`,
+        distance: `${(Math.random() * 4 + 2).toFixed(1)} km`
+      });
+    }
+    
+    return contacts;
   }
 
   private getRecommendation(riskScore: number): string {
