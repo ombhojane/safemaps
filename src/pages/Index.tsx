@@ -5,9 +5,10 @@ import RouteList from "@/components/RouteList";
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route } from "@/types";
 import { computeRoutes } from "@/services/mapsService";
-import { Shield, AlertTriangle, MapPin, Image as ImageIcon } from "lucide-react";
+import { Shield, AlertTriangle, MapPin, Image as ImageIcon, BarChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 
 const Index = () => {
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -41,6 +42,38 @@ const Index = () => {
 
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId(routeId);
+  };
+
+  // Handle Gemini analysis completion
+  const handleAnalysisComplete = (routeId: string, riskScores: number[], averageRiskScore: number) => {
+    setRoutes(prevRoutes => 
+      prevRoutes.map(route => 
+        route.id === routeId ? {
+          ...route,
+          geminiAnalysis: {
+            riskScores,
+            averageRiskScore,
+            isAnalyzing: false
+          }
+        } : route
+      )
+    );
+  };
+
+  // Start the Gemini analysis process
+  const startGeminiAnalysis = (routeId: string) => {
+    setRoutes(prevRoutes => 
+      prevRoutes.map(route => 
+        route.id === routeId ? {
+          ...route,
+          geminiAnalysis: {
+            riskScores: [],
+            averageRiskScore: 0,
+            isAnalyzing: true
+          }
+        } : route
+      )
+    );
   };
 
   // Get the selected route object
@@ -108,7 +141,7 @@ const Index = () => {
               {selectedRoute && (
                 <div className="bg-card rounded-lg border p-4 shadow-sm">
                   <h2 className="text-lg font-medium mb-3">Route Details</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground mb-1">Distance</h3>
                       <p className="text-lg">{selectedRoute.distance}</p>
@@ -121,7 +154,59 @@ const Index = () => {
                       <h3 className="text-sm font-medium text-muted-foreground mb-1">Risk Score</h3>
                       <p className="text-lg">{selectedRoute.riskScore.toFixed(1)}/10</p>
                     </div>
+                    
+                    {/* Gemini AI Analysis */}
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-1">
+                        AI Safety Score
+                      </h3>
+                      {selectedRoute.geminiAnalysis?.isAnalyzing ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                          <span className="text-sm">Analyzing...</span>
+                        </div>
+                      ) : selectedRoute.geminiAnalysis?.riskScores?.length > 0 ? (
+                        <p className="text-lg">
+                          {selectedRoute.geminiAnalysis.averageRiskScore}/100
+                        </p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Not analyzed</p>
+                      )}
+                    </div>
                   </div>
+                  
+                  {/* Add AI Safety Analysis details card if analysis is complete */}
+                  {selectedRoute.geminiAnalysis?.riskScores?.length > 0 && (
+                    <div className="p-3 border rounded-lg bg-muted/30 mb-4">
+                      <div className="flex items-start gap-2">
+                        <BarChart className="h-5 w-5 text-primary mt-0.5" />
+                        <div>
+                          <h3 className="text-sm font-medium mb-1">AI Safety Analysis</h3>
+                          <p className="text-sm text-muted-foreground mb-2">
+                            Gemini AI analyzed the Street View imagery along this route and detected the following risk factors:
+                          </p>
+                          
+                          <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-1">
+                            <div 
+                              className={cn(
+                                "h-full",
+                                selectedRoute.geminiAnalysis.averageRiskScore <= 30 ? "bg-green-500" :
+                                selectedRoute.geminiAnalysis.averageRiskScore <= 60 ? "bg-yellow-500" :
+                                "bg-red-500"
+                              )}
+                              style={{ width: `${selectedRoute.geminiAnalysis.averageRiskScore}%` }}
+                            ></div>
+                          </div>
+                          
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>Low Risk</span>
+                            <span>Medium Risk</span>
+                            <span>High Risk</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   
                   <Tabs defaultValue="map" className="w-full">
                     <TabsList className="mb-4">
@@ -146,6 +231,10 @@ const Index = () => {
                       <StreetViewGallery 
                         images={selectedRoute.streetViewImages || []}
                         className="mb-4"
+                        geminiAnalysis={selectedRoute.geminiAnalysis}
+                        onAnalysisComplete={(riskScores, averageRiskScore) => 
+                          handleAnalysisComplete(selectedRoute.id, riskScores, averageRiskScore)
+                        }
                       />
                     </TabsContent>
                   </Tabs>

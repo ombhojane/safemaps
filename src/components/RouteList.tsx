@@ -1,127 +1,111 @@
 import { Route } from "@/types";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { AlertTriangle, Clock, Route as RouteIcon, Gauge, BarChart, CheckCircle2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { AlertTriangle, Check, Clock, MapPin, Route as RouteIcon } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 interface RouteListProps {
   routes: Route[];
   selectedRouteId?: string;
   onRouteSelect: (routeId: string) => void;
-  className?: string;
 }
 
-const RouteList = ({
-  routes,
-  selectedRouteId,
-  onRouteSelect,
-  className,
-}: RouteListProps) => {
-  // Helper function to get risk level
-  const getRiskLevel = (
-    score: number
-  ): { level: "low" | "medium" | "high"; color: string; icon: React.ReactNode } => {
-    if (score <= 3.3) {
-      return {
-        level: "low",
-        color: "text-green-500 bg-green-100 dark:bg-green-950 dark:text-green-400",
-        icon: <Check className="h-4 w-4" />,
-      };
-    } else if (score <= 6.6) {
-      return {
-        level: "medium",
-        color: "text-yellow-500 bg-yellow-100 dark:bg-yellow-950 dark:text-yellow-400",
-        icon: <AlertTriangle className="h-4 w-4" />,
-      };
-    } else {
-      return {
-        level: "high",
-        color: "text-red-500 bg-red-100 dark:bg-red-950 dark:text-red-400",
-        icon: <AlertTriangle className="h-4 w-4" />,
-      };
-    }
+const RouteList = ({ routes, selectedRouteId, onRouteSelect }: RouteListProps) => {
+  // Function to get risk color class
+  const getRiskColorClass = (score: number): string => {
+    // MapRiskScore is on a scale of 0-10
+    if (score <= 3.3) return "bg-green-500";
+    if (score <= 6.6) return "bg-yellow-500";
+    return "bg-red-500";
   };
 
-  if (!routes || routes.length === 0) {
-    return (
-      <div className={cn("text-center py-8", className)}>
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-          <RouteIcon className="h-6 w-6 text-muted-foreground" />
-        </div>
-        <h3 className="mt-4 text-lg font-medium">No Routes Available</h3>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Enter a source and destination to view route options.
-        </p>
-      </div>
-    );
-  }
+  // Function to get Gemini risk color class (0-100 scale)
+  const getGeminiRiskColorClass = (score: number): string => {
+    // Gemini risk score is on a scale of 0-100
+    if (score <= 30) return "bg-green-500";
+    if (score <= 60) return "bg-yellow-500";
+    return "bg-red-500";
+  };
 
   return (
-    <div className={cn("space-y-4", className)}>
-      <h2 className="text-xl font-semibold">Available Routes</h2>
-      <div className="space-y-4">
-        {routes.map((route) => {
-          const { level, color, icon } = getRiskLevel(route.riskScore);
-          const isSelected = route.id === selectedRouteId;
-
-          return (
-            <div
-              key={route.id}
-              className={cn(
-                "bg-card rounded-2xl p-4 transition-all duration-300 ease-in-out border",
-                isSelected
-                  ? "border-primary shadow-md"
-                  : "border-border hover:border-primary/50"
-              )}
-            >
-              <div className="flex items-center">
-                <div
+    <div className="flex flex-col gap-3">
+      <h2 className="text-lg font-medium">Available Routes ({routes.length})</h2>
+      <div className="space-y-3">
+        {routes.map((route) => (
+          <Card 
+            key={route.id}
+            className={cn(
+              "overflow-hidden cursor-pointer transition-all hover:border-primary/50 group",
+              selectedRouteId === route.id && "border-primary ring-1 ring-primary"
+            )}
+            onClick={() => onRouteSelect(route.id)}
+          >
+            <CardHeader className="p-3 pb-0">
+              <div className="flex items-center justify-between">
+                <Badge 
+                  variant="outline" 
                   className={cn(
-                    "w-12 h-12 rounded-full flex items-center justify-center",
-                    isSelected ? "bg-primary/20" : "bg-primary/10"
+                    "px-2 py-0.5 text-white",
+                    getRiskColorClass(route.riskScore)
                   )}
                 >
-                  <RouteIcon
+                  <Gauge className="h-3 w-3 mr-1" />
+                  Risk: {route.riskScore.toFixed(1)}/10
+                </Badge>
+                
+                {/* AI Analysis Status or Badge */}
+                {route.geminiAnalysis?.isAnalyzing ? (
+                  <Badge variant="outline" className="flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span className="text-xs">Analyzing...</span>
+                  </Badge>
+                ) : route.geminiAnalysis?.riskScores?.length > 0 ? (
+                  <Badge 
+                    variant="outline" 
                     className={cn(
-                      "h-6 w-6",
-                      isSelected ? "text-primary" : "text-primary/80"
+                      "px-2 py-0.5 text-white flex items-center gap-1",
+                      getGeminiRiskColorClass(route.geminiAnalysis.averageRiskScore)
                     )}
-                  />
-                </div>
-                <div className="ml-4 flex-1">
-                  <div className="flex justify-between items-center">
-                    <h3 className="text-lg font-medium">Route {routes.indexOf(route) + 1}</h3>
-                    <div className={cn("px-2 py-1 rounded-md text-xs font-medium flex items-center space-x-1", color)}>
-                      {icon}
-                      <span className="capitalize">{level} Risk</span>
-                      <span className="ml-1">•</span>
-                      <span>Score: {route.riskScore.toFixed(1)}/10</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-4 mt-2 text-sm">
-                    <div className="flex items-center">
-                      <MapPin className="h-4 w-4 text-muted-foreground mr-1" />
-                      <span>{route.distance}</span>
-                    </div>
-                    <div className="flex items-center">
-                      <Clock className="h-4 w-4 text-muted-foreground mr-1" />
-                      <span>{route.duration}</span>
-                    </div>
-                  </div>
-                </div>
+                  >
+                    <BarChart className="h-3 w-3" />
+                    AI: {route.geminiAnalysis.averageRiskScore}/100
+                  </Badge>
+                ) : null}
               </div>
-
-              <div className="mt-4 flex justify-end">
-                <Button
-                  variant={isSelected ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => onRouteSelect(route.id)}
-                >
-                  {isSelected ? "Selected" : "Select"}
-                </Button>
+            </CardHeader>
+            
+            <CardContent className="p-3">
+              <div className="space-y-2">
+                <div className="flex items-center space-x-1 text-sm">
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                  <span>{route.duration}</span>
+                  <div className="h-4 border-r mx-1"></div>
+                  <RouteIcon className="h-4 w-4 text-muted-foreground" />
+                  <span>{route.distance}</span>
+                </div>
+                
+                {/* Risk Areas Summary */}
+                {route.riskAreas && route.riskAreas.length > 0 && (
+                  <div className="flex items-center space-x-1 text-sm">
+                    <AlertTriangle className="h-4 w-4 text-amber-500" />
+                    <span>
+                      {route.riskAreas.length} risk {route.riskAreas.length === 1 ? 'area' : 'areas'} detected
+                    </span>
+                  </div>
+                )}
               </div>
-            </div>
-          );
-        })}
+            </CardContent>
+            
+            <CardFooter className="p-3 pt-0">
+              <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
+                <div 
+                  className={cn("h-full rounded-full", getRiskColorClass(route.riskScore))}
+                  style={{ width: `${route.riskScore * 10}%` }}
+                ></div>
+              </div>
+            </CardFooter>
+          </Card>
+        ))}
       </div>
     </div>
   );

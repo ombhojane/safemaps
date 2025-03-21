@@ -1,4 +1,5 @@
 import { Location, Route, RoutePoint } from "@/types";
+import { analyzeStreetViewImages, calculateAverageRiskScore } from "@/services/geminiService";
 
 // Get API key from environment variables
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -121,7 +122,7 @@ export const computeRoutes = async (
     const data: ComputeRoutesResponse = await response.json();
     
     // Process the routes data
-    return data.routes.map((route, index) => {
+    const routes = data.routes.map((route, index) => {
       // Decode the polyline to get the route path
       const points = decodePolyline(route.polyline.encodedPolyline);
       
@@ -159,12 +160,74 @@ export const computeRoutes = async (
         riskAreas: [], // Would be populated with real data
         path: generateSVGPath(points), // Create an SVG path for visualization
         streetViewImages,
+        // Initialize Gemini analysis with isAnalyzing: true
+        geminiAnalysis: {
+          riskScores: [],
+          averageRiskScore: 0,
+          isAnalyzing: false
+        }
       };
     });
+
+    // Start Gemini analysis for all routes asynchronously
+    // We don't await this so routes are returned to the user immediately
+    analyzeAllRoutes(routes);
+    
+    return routes;
   } catch (error) {
     console.error('Error computing routes:', error);
     throw error;
   }
+};
+
+/**
+ * Analyze all routes with Gemini AI
+ */
+const analyzeAllRoutes = async (routes: Route[]) => {
+  try {
+    for (const route of routes) {
+      if (!route.streetViewImages || route.streetViewImages.length === 0) continue;
+      
+      // Analyze a subset of images to improve performance
+      // For very long routes with many images, select a reasonable sample
+      let imagesToAnalyze = route.streetViewImages;
+      if (route.streetViewImages.length > 10) {
+        // For long routes, use evenly spaced samples
+        const sampleCount = 10;
+        imagesToAnalyze = selectEvenlySpacedSamples(route.streetViewImages, sampleCount);
+      }
+      
+      const riskScores = await analyzeStreetViewImages(imagesToAnalyze);
+      const averageRiskScore = calculateAverageRiskScore(riskScores);
+      
+      // Update route with analysis results 
+      // This will update the objects in the original array
+      route.geminiAnalysis = {
+        riskScores,
+        averageRiskScore,
+        isAnalyzing: false
+      };
+    }
+  } catch (error) {
+    console.error('Error analyzing routes with Gemini:', error);
+  }
+};
+
+/**
+ * Select evenly spaced samples from an array
+ */
+const selectEvenlySpacedSamples = <T>(array: T[], sampleCount: number): T[] => {
+  if (array.length <= sampleCount) return array;
+  
+  const result: T[] = [];
+  const step = array.length / sampleCount;
+  
+  for (let i = 0; i < sampleCount; i++) {
+    const index = Math.min(Math.floor(i * step), array.length - 1);
+    result.push(array[index]);
+  }
+  
+  return result;
 };
 
 // Helper function to calculate route risk score based on route points

@@ -33,6 +33,12 @@ export interface Route {
   path?: string;
   // Add street view images
   streetViewImages?: string[];
+  // Add Gemini analysis results
+  geminiAnalysis?: {
+    riskScores: number[];
+    averageRiskScore: number;
+    isAnalyzing: boolean;
+  };
 }
 
 export interface RiskArea {
