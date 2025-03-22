@@ -1,16 +1,26 @@
 import { Route } from "@/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Clock, Route as RouteIcon, Gauge, BarChart, CheckCircle2, Loader2 } from "lucide-react";
+import { AlertTriangle, Clock, Route as RouteIcon, Gauge, BarChart, CheckCircle2, Loader2, Navigation } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { generateNavigationUrl } from "@/services/mapsService";
 
 interface RouteListProps {
   routes: Route[];
   selectedRouteId?: string;
   onRouteSelect: (routeId: string) => void;
+  onStartTrip: (route: Route) => void;
+  isStartingTrip: boolean;
 }
 
-const RouteList = ({ routes, selectedRouteId, onRouteSelect }: RouteListProps) => {
+const RouteList = ({ 
+  routes, 
+  selectedRouteId, 
+  onRouteSelect,
+  onStartTrip,
+  isStartingTrip
+}: RouteListProps) => {
   // Function to get risk color class
   const getRiskColorClass = (score: number): string => {
     // MapRiskScore is on a scale of 0-10
@@ -97,11 +107,37 @@ const RouteList = ({ routes, selectedRouteId, onRouteSelect }: RouteListProps) =
             </CardContent>
             
             <CardFooter className="p-3 pt-0">
-              <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className={cn("h-full rounded-full", getRiskColorClass(route.riskScore))}
-                  style={{ width: `${route.riskScore * 10}%` }}
-                ></div>
+              <div className="flex flex-col gap-2 w-full">
+                <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
+                  <div 
+                    className={cn("h-full rounded-full", getRiskColorClass(route.riskScore))}
+                    style={{ width: `${route.riskScore * 10}%` }}
+                  ></div>
+                </div>
+                
+                {/* Start Trip Button */}
+                <Button 
+                  variant="outline"
+                  size="sm"
+                  className="w-full mt-2 text-xs"
+                  onClick={(e) => {
+                    e.stopPropagation(); // Prevent route selection when clicking this button
+                    onStartTrip(route);
+                  }}
+                  disabled={isStartingTrip}
+                >
+                  {isStartingTrip && selectedRouteId === route.id ? (
+                    <>
+                      <span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5"></span>
+                      Starting...
+                    </>
+                  ) : (
+                    <>
+                      <Navigation className="h-3.5 w-3.5 mr-1.5" />
+                      Start Trip
+                    </>
+                  )}
+                </Button>
               </div>
             </CardFooter>
           </Card>

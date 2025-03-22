@@ -4,8 +4,8 @@ import RouteForm from "@/components/RouteForm";
 import RouteList from "@/components/RouteList";
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route } from "@/types";
-import { computeRoutes } from "@/services/mapsService";
-import { Shield, AlertTriangle, MapPin, Image as ImageIcon, BarChart } from "lucide-react";
+import { computeRoutes, generateNavigationUrl } from "@/services/mapsService";
+import { Shield, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -15,6 +15,7 @@ const Index = () => {
   const [selectedRouteId, setSelectedRouteId] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isStartingTrip, setIsStartingTrip] = useState(false);
 
   const handleRouteSubmit = async (source: Location, destination: Location) => {
     setIsLoading(true);
@@ -76,6 +77,17 @@ const Index = () => {
     );
   };
 
+  // Handle starting a trip
+  const handleStartTrip = (route: Route) => {
+    setIsStartingTrip(true);
+    
+    // Slight delay to show loading state
+    setTimeout(() => {
+      window.open(generateNavigationUrl(route), '_blank');
+      setIsStartingTrip(false);
+    }, 500);
+  };
+
   // Get the selected route object
   const selectedRoute = routes.find(route => route.id === selectedRouteId);
 
@@ -132,7 +144,9 @@ const Index = () => {
               <RouteList 
                 routes={routes} 
                 selectedRouteId={selectedRouteId} 
-                onRouteSelect={handleRouteSelect} 
+                onRouteSelect={handleRouteSelect}
+                onStartTrip={handleStartTrip}
+                isStartingTrip={isStartingTrip}
               />
             </div>
             
@@ -140,7 +154,29 @@ const Index = () => {
             <div className="lg:col-span-8 space-y-6">
               {selectedRoute && (
                 <div className="bg-card rounded-lg border p-4 shadow-sm">
-                  <h2 className="text-lg font-medium mb-3">Route Details</h2>
+                  <div className="flex justify-between items-start mb-3">
+                    <h2 className="text-lg font-medium">Route Details</h2>
+                    
+                    {/* Start Trip Button */}
+                    <Button 
+                      onClick={() => handleStartTrip(selectedRoute)}
+                      className="text-sm"
+                      disabled={isStartingTrip}
+                    >
+                      {isStartingTrip ? (
+                        <>
+                          <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5"></span>
+                          Starting...
+                        </>
+                      ) : (
+                        <>
+                          <Navigation className="h-4 w-4 mr-1.5" />
+                          Start Trip
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                     <div>
                       <h3 className="text-sm font-medium text-muted-foreground mb-1">Distance</h3>
@@ -263,6 +299,30 @@ const Index = () => {
           <p>Route Risk Radar • Safety-First Navigation</p>
         </div>
       </footer>
+      
+      {/* Mobile Fixed Navigation Button */}
+      {selectedRoute && (
+        <div className="fixed bottom-4 left-0 right-0 flex justify-center lg:hidden z-10 px-4">
+          <Button 
+            onClick={() => handleStartTrip(selectedRoute)}
+            className="w-full max-w-md shadow-lg"
+            size="lg"
+            disabled={isStartingTrip}
+          >
+            {isStartingTrip ? (
+              <>
+                <span className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></span>
+                Starting Trip...
+              </>
+            ) : (
+              <>
+                <Navigation className="h-5 w-5 mr-2" />
+                Start Trip
+              </>
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 };
