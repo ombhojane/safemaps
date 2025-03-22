@@ -38,6 +38,8 @@ export interface Route {
     riskScores: number[];
     averageRiskScore: number;
     isAnalyzing: boolean;
+    explanations?: string[];
+    precautions?: string[];
   };
 }
 

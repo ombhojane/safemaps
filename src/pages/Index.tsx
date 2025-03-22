@@ -5,7 +5,7 @@ import RouteList from "@/components/RouteList";
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route } from "@/types";
 import { computeRoutes, generateNavigationUrl } from "@/services/mapsService";
-import { Shield, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation } from "lucide-react";
+import { Shield, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -46,7 +46,7 @@ const Index = () => {
   };
 
   // Handle Gemini analysis completion
-  const handleAnalysisComplete = (routeId: string, riskScores: number[], averageRiskScore: number) => {
+  const handleAnalysisComplete = (routeId: string, riskScores: number[], averageRiskScore: number, explanations: string[], precautions: string[]) => {
     setRoutes(prevRoutes => 
       prevRoutes.map(route => 
         route.id === routeId ? {
@@ -54,6 +54,8 @@ const Index = () => {
           geminiAnalysis: {
             riskScores,
             averageRiskScore,
+            explanations,
+            precautions,
             isAnalyzing: false
           }
         } : route
@@ -70,6 +72,8 @@ const Index = () => {
           geminiAnalysis: {
             riskScores: [],
             averageRiskScore: 0,
+            explanations: [],
+            precautions: [],
             isAnalyzing: true
           }
         } : route
@@ -219,7 +223,7 @@ const Index = () => {
                         <div>
                           <h3 className="text-sm font-medium mb-1">AI Safety Analysis</h3>
                           <p className="text-sm text-muted-foreground mb-2">
-                            Gemini AI analyzed the Street View imagery along this route and detected the following risk factors:
+                            Street View analysis detected these risk factors along the route:
                           </p>
                           
                           <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-1">
@@ -239,6 +243,36 @@ const Index = () => {
                             <span>Medium Risk</span>
                             <span>High Risk</span>
                           </div>
+                          
+                          {/* Key Insights from Analysis */}
+                          {selectedRoute.geminiAnalysis.explanations?.length > 0 && (
+                            <div className="mt-3 border-t pt-3">
+                              <h4 className="text-sm font-medium mb-2">Key Insights:</h4>
+                              <ul className="text-sm space-y-1.5">
+                                {selectedRoute.geminiAnalysis.explanations.slice(0, 3).map((explanation, index) => (
+                                  <li key={index} className="flex items-start gap-2">
+                                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                                    <span>{explanation}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {/* Precautions from Analysis */}
+                          {selectedRoute.geminiAnalysis.precautions?.length > 0 && (
+                            <div className="mt-3 border-t pt-3">
+                              <h4 className="text-sm font-medium mb-2">Safety Precautions:</h4>
+                              <ul className="text-sm space-y-1.5">
+                                {selectedRoute.geminiAnalysis.precautions.slice(0, 3).map((precaution, index) => (
+                                  <li key={index} className="flex items-start gap-2">
+                                    <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <span className="text-muted-foreground">{precaution}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -264,12 +298,12 @@ const Index = () => {
                       />
                     </TabsContent>
                     <TabsContent value="streetview">
-                      <StreetViewGallery 
+                      <StreetViewGallery
                         images={selectedRoute.streetViewImages || []}
                         className="mb-4"
                         geminiAnalysis={selectedRoute.geminiAnalysis}
-                        onAnalysisComplete={(riskScores, averageRiskScore) => 
-                          handleAnalysisComplete(selectedRoute.id, riskScores, averageRiskScore)
+                        onAnalysisComplete={(riskScores, averageRiskScore, explanations, precautions) => 
+                          handleAnalysisComplete(selectedRoute.id, riskScores, averageRiskScore, explanations, precautions)
                         }
                       />
                     </TabsContent>

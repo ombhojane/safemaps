@@ -181,12 +181,19 @@ export const computeRoutes = async (
 };
 
 /**
- * Analyze all routes with Gemini AI
+ * Analyze all routes with AI
  */
 const analyzeAllRoutes = async (routes: Route[]) => {
   try {
     for (const route of routes) {
       if (!route.streetViewImages || route.streetViewImages.length === 0) continue;
+      
+      // Update route to show it's being analyzed
+      route.geminiAnalysis = {
+        riskScores: [],
+        averageRiskScore: 0,
+        isAnalyzing: true
+      };
       
       // Analyze a subset of images to improve performance
       // For very long routes with many images, select a reasonable sample
@@ -197,13 +204,15 @@ const analyzeAllRoutes = async (routes: Route[]) => {
         imagesToAnalyze = selectEvenlySpacedSamples(route.streetViewImages, sampleCount);
       }
       
-      const riskScores = await analyzeStreetViewImages(imagesToAnalyze);
-      const averageRiskScore = calculateAverageRiskScore(riskScores);
+      // Get analysis results including explanations and precautions
+      const analysisResults = await analyzeStreetViewImages(imagesToAnalyze);
+      const averageRiskScore = calculateAverageRiskScore(analysisResults.riskScores);
       
-      // Update route with analysis results 
-      // This will update the objects in the original array
+      // Update route with analysis results
       route.geminiAnalysis = {
-        riskScores,
+        riskScores: analysisResults.riskScores,
+        explanations: analysisResults.explanations,
+        precautions: analysisResults.precautions,
         averageRiskScore,
         isAnalyzing: false
       };

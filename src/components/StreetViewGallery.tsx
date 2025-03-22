@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ArrowLeft, ArrowRight, MapPin, BarChart, AlertCircle } from "lucide-react";
+import { ArrowLeft, ArrowRight, MapPin, BarChart, AlertCircle, Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { analyzeStreetViewImages, calculateAverageRiskScore } from "@/services/geminiService";
@@ -9,11 +9,13 @@ import { Badge } from "@/components/ui/badge";
 interface StreetViewGalleryProps {
   images: string[];
   className?: string;
-  onAnalysisComplete?: (riskScores: number[], averageRiskScore: number) => void;
+  onAnalysisComplete?: (riskScores: number[], averageRiskScore: number, explanations: string[], precautions: string[]) => void;
   geminiAnalysis?: {
     riskScores: number[];
     averageRiskScore: number;
     isAnalyzing: boolean;
+    explanations: string[];
+    precautions: string[];
   };
 }
 
@@ -56,12 +58,17 @@ const StreetViewGallery = ({
     setIsAnalyzing(true);
     try {
       // First send empty scores to indicate analysis has started
-      onAnalysisComplete([], 0);
+      onAnalysisComplete([], 0, [], []);
       
       // Then perform the actual analysis
-      const riskScores = await analyzeStreetViewImages(images);
-      const averageRiskScore = calculateAverageRiskScore(riskScores);
-      onAnalysisComplete(riskScores, averageRiskScore);
+      const analysisResults = await analyzeStreetViewImages(images);
+      const averageRiskScore = calculateAverageRiskScore(analysisResults.riskScores);
+      onAnalysisComplete(
+        analysisResults.riskScores, 
+        averageRiskScore,
+        analysisResults.explanations,
+        analysisResults.precautions
+      );
     } catch (error) {
       console.error("Error analyzing images:", error);
     } finally {
@@ -114,7 +121,7 @@ const StreetViewGallery = ({
             disabled={isAnalyzing || geminiAnalysis?.isAnalyzing}
             className="w-full"
           >
-            {isAnalyzing ? "Analyzing..." : "Analyze Route Safety with Gemini AI"}
+            {isAnalyzing ? "Analyzing..." : "Analyze Route Safety with AI"}
             <BarChart className="ml-2 h-4 w-4" />
           </Button>
         )}
@@ -123,7 +130,7 @@ const StreetViewGallery = ({
           <div className="p-4 border rounded-lg bg-muted">
             <div className="flex items-center gap-2 mb-2">
               <AlertCircle className="h-5 w-5 text-blue-500" />
-              <p className="text-sm font-medium">Analyzing route safety with Gemini AI...</p>
+              <p className="text-sm font-medium">Analyzing route safety with AI...</p>
             </div>
             <Progress value={progress} className="h-2" />
           </div>
@@ -215,6 +222,25 @@ const StreetViewGallery = ({
           </div>
         )}
       </div>
+
+      {/* Image Analysis Information */}
+      {geminiAnalysis?.explanations && geminiAnalysis.explanations[currentIndex] && (
+        <div className="mt-2 mb-3 p-3 border rounded-md bg-card text-sm">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+              <p>{geminiAnalysis.explanations[currentIndex]}</p>
+            </div>
+            
+            {geminiAnalysis.precautions && geminiAnalysis.precautions[currentIndex] && (
+              <div className="flex items-start gap-2">
+                <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                <p className="text-muted-foreground font-medium">{geminiAnalysis.precautions[currentIndex]}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Thumbnail Navigation */}
       <div className="flex gap-1 overflow-x-auto py-1">

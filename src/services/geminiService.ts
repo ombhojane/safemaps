@@ -15,10 +15,17 @@ const generationConfig = {
   maxOutputTokens: 1024,
 };
 
+// Response type for image analysis
+interface ImageAnalysisResponse {
+  riskScore: number;
+  explanation: string;
+  precaution: string;
+}
+
 /**
- * Analyzes a street view image and returns a risk score
+ * Analyzes a street view image and returns a risk score with explanation
  */
-export const analyzeStreetViewImage = async (imageUrl: string): Promise<number> => {
+export const analyzeStreetViewImage = async (imageUrl: string): Promise<ImageAnalysisResponse> => {
   try {
     const model = genAI.getGenerativeModel({ model: modelName });
     
@@ -26,7 +33,11 @@ export const analyzeStreetViewImage = async (imageUrl: string): Promise<number> 
     const response = await fetch(imageUrl);
     if (!response.ok) {
       console.error(`Failed to fetch image: ${response.statusText}`);
-      return 0;
+      return { 
+        riskScore: 50, 
+        explanation: "Could not analyze image.",
+        precaution: "Drive with caution."
+      };
     }
     
     const imageBlob = await response.blob();
@@ -36,22 +47,21 @@ export const analyzeStreetViewImage = async (imageUrl: string): Promise<number> 
     
     // Set up prompt for image analysis
     const prompt = `
-      Please analyze this street view image for driving safety and road conditions.
-      Rate the overall risk level on a scale of 0-100, where:
-      0 = Completely safe with no visible risks
-      50 = Moderate risk with some potential hazards
-      100 = Extremely dangerous with multiple severe hazards
+      Analyze this street view image for driving safety and road conditions.
       
-      Consider factors like:
-      - Road conditions
-      - Visibility
-      - Traffic density
-      - Pedestrian activity
-      - Construction
-      - Narrow roads or sharp curves
-      - Environmental factors (weather, lighting)
+      1. Rate the overall risk level on a scale of 0-100, where:
+         0 = Completely safe with no visible risks
+         50 = Moderate risk with some potential hazards
+         100 = Extremely dangerous with multiple severe hazards
       
-      Return only a single number between 0-100 representing the risk score.
+      2. Provide a single, concise sentence explaining the main safety concern or feature visible in this image.
+      
+      3. Give one short, practical precaution drivers should take when driving through this area.
+      
+      Format your response exactly like this with one line for each:
+      Risk Score: [number 0-100]
+      Explanation: [one concise sentence about main safety feature or concern]
+      Precaution: [one brief, actionable driving tip]
     `;
     
     // Send the image and prompt to Gemini
@@ -72,20 +82,33 @@ export const analyzeStreetViewImage = async (imageUrl: string): Promise<number> 
       generationConfig
     });
     
-    // Extract the risk score from the response
+    // Extract the response text
     const responseText = result.response.text().trim();
-    const riskScore = parseInt(responseText);
     
-    // Validate the response
-    if (isNaN(riskScore) || riskScore < 0 || riskScore > 100) {
-      console.error(`Invalid risk score from Gemini: ${responseText}`);
-      return 50; // Default to medium risk if response is invalid
-    }
+    // Parse the structured response
+    const riskScoreMatch = responseText.match(/Risk Score: (\d+)/i);
+    const explanationMatch = responseText.match(/Explanation: (.+?)(?:\n|$)/i);
+    const precautionMatch = responseText.match(/Precaution: (.+?)(?:\n|$)/i);
     
-    return riskScore;
+    const riskScore = riskScoreMatch ? parseInt(riskScoreMatch[1]) : 50;
+    const explanation = explanationMatch ? explanationMatch[1].trim() : "No explanation provided.";
+    const precaution = precautionMatch ? precautionMatch[1].trim() : "Drive with caution.";
+    
+    // Validate the risk score
+    const validatedRiskScore = (isNaN(riskScore) || riskScore < 0 || riskScore > 100) ? 50 : riskScore;
+    
+    return {
+      riskScore: validatedRiskScore,
+      explanation,
+      precaution
+    };
   } catch (error) {
     console.error("Error analyzing image with Gemini:", error);
-    return 50; // Default to medium risk on error
+    return { 
+      riskScore: 50, 
+      explanation: "Analysis error.",
+      precaution: "Drive with caution."
+    };
   }
 };
 
@@ -102,13 +125,19 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 };
 
 /**
- * Analyzes multiple street view images and returns their risk scores
+ * Analyzes multiple street view images and returns their risk scores with explanations
  */
-export const analyzeStreetViewImages = async (imageUrls: string[]): Promise<number[]> => {
-  if (!imageUrls.length) return [];
+export const analyzeStreetViewImages = async (imageUrls: string[]): Promise<{
+  riskScores: number[];
+  explanations: string[];
+  precautions: string[];
+}> => {
+  if (!imageUrls.length) return { riskScores: [], explanations: [], precautions: [] };
   
   // Process images in parallel with a limit of 3 concurrent requests
   const riskScores: number[] = [];
+  const explanations: string[] = [];
+  const precautions: string[] = [];
   const concurrencyLimit = 3;
   
   for (let i = 0; i < imageUrls.length; i += concurrencyLimit) {
@@ -116,10 +145,15 @@ export const analyzeStreetViewImages = async (imageUrls: string[]): Promise<numb
     const batchResults = await Promise.all(
       batch.map(url => analyzeStreetViewImage(url))
     );
-    riskScores.push(...batchResults);
+    
+    batchResults.forEach(result => {
+      riskScores.push(result.riskScore);
+      explanations.push(result.explanation);
+      precautions.push(result.precaution);
+    });
   }
   
-  return riskScores;
+  return { riskScores, explanations, precautions };
 };
 
 /**
