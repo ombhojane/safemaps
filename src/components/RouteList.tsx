@@ -10,8 +10,10 @@ interface RouteListProps {
   routes: Route[];
   selectedRouteId?: string;
   onRouteSelect: (routeId: string) => void;
-  onStartTrip: (route: Route) => void;
-  isStartingTrip: boolean;
+  onStartTrip?: (route: Route) => void;
+  isStartingTrip?: boolean;
+  className?: string;
+  compact?: boolean;
 }
 
 const RouteList = ({ 
@@ -19,8 +21,16 @@ const RouteList = ({
   selectedRouteId, 
   onRouteSelect,
   onStartTrip,
-  isStartingTrip
+  isStartingTrip = false,
+  className,
+  compact = false
 }: RouteListProps) => {
+  if (!routes || routes.length === 0) {
+    return null;
+  }
+
+  const selectedRoute = routes.find(route => route.id === selectedRouteId);
+
   // Function to get risk color class
   const getRiskColorClass = (score: number): string => {
     // MapRiskScore is on a scale of 0-10
@@ -38,110 +48,111 @@ const RouteList = ({
   };
 
   return (
-    <div className="flex flex-col gap-3">
-      <h2 className="text-lg font-medium">Available Routes ({routes.length})</h2>
-      <div className="space-y-3">
-        {routes.map((route) => (
-          <Card 
-            key={route.id}
-            className={cn(
-              "overflow-hidden cursor-pointer transition-all hover:border-primary/50 group",
-              selectedRouteId === route.id && "border-primary ring-1 ring-primary"
-            )}
-            onClick={() => onRouteSelect(route.id)}
-          >
-            <CardHeader className="p-3 pb-0">
-              <div className="flex items-center justify-between">
-                <Badge 
-                  variant="outline" 
-                  className={cn(
-                    "px-2 py-0.5 text-white",
-                    getRiskColorClass(route.riskScore)
-                  )}
-                >
-                  <Gauge className="h-3 w-3 mr-1" />
+    <div className={cn("space-y-4", className)}>
+      <div className="flex justify-between items-center mb-1">
+        <h2 className="text-lg font-medium">Available Routes ({routes.length})</h2>
+      </div>
+      
+      <div className={cn("space-y-4", compact ? "flex overflow-x-auto pb-2 space-x-4 space-y-0" : "")}>
+        {routes.map((route) => {
+          const isSelected = route.id === selectedRouteId;
+          let riskColor = "bg-green-500";
+          let riskText = "Low Risk";
+          
+          if (route.riskScore > 6.6) {
+            riskColor = "bg-red-500";
+            riskText = "High Risk";
+          } else if (route.riskScore > 3.3) {
+            riskColor = "bg-yellow-500";
+            riskText = "Medium Risk";
+          }
+
+          let aiScoreColor = "bg-green-500";
+          if (route.geminiAnalysis?.averageRiskScore > 60) {
+            aiScoreColor = "bg-red-500";
+          } else if (route.geminiAnalysis?.averageRiskScore > 30) {
+            aiScoreColor = "bg-yellow-500";
+          }
+          
+          return (
+            <div 
+              key={route.id}
+              onClick={() => onRouteSelect(route.id)}
+              className={cn(
+                "rounded-lg border bg-card p-4 shadow-sm transition-all cursor-pointer relative",
+                isSelected 
+                  ? "border-primary shadow-md ring-1 ring-primary" 
+                  : "hover:border-primary/50",
+                compact ? "min-w-[200px] flex-shrink-0 p-3" : "",
+                isSelected && compact ? "border-primary/80 bg-primary/5" : ""
+              )}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <div className={cn("px-2 py-1 rounded-full text-xs font-medium flex items-center", 
+                  compact ? "py-0.5" : "")}>
+                  <span className={cn("inline-block w-2 h-2 rounded-full mr-1.5", riskColor)}></span>
                   Risk: {route.riskScore.toFixed(1)}/10
-                </Badge>
-                
-                {/* AI Analysis Status or Badge */}
-                {route.geminiAnalysis?.isAnalyzing ? (
-                  <Badge variant="outline" className="flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    <span className="text-xs">Analyzing...</span>
-                  </Badge>
-                ) : route.geminiAnalysis?.riskScores?.length > 0 ? (
-                  <Badge 
-                    variant="outline" 
-                    className={cn(
-                      "px-2 py-0.5 text-white flex items-center gap-1",
-                      getGeminiRiskColorClass(route.geminiAnalysis.averageRiskScore)
-                    )}
-                  >
-                    <BarChart className="h-3 w-3" />
-                    AI: {route.geminiAnalysis.averageRiskScore}/100
-                  </Badge>
-                ) : null}
-              </div>
-            </CardHeader>
-            
-            <CardContent className="p-3">
-              <div className="space-y-2">
-                <div className="flex items-center space-x-1 text-sm">
-                  <Clock className="h-4 w-4 text-muted-foreground" />
-                  <span>{route.duration}</span>
-                  <div className="h-4 border-r mx-1"></div>
-                  <RouteIcon className="h-4 w-4 text-muted-foreground" />
-                  <span>{route.distance}</span>
                 </div>
                 
-                {/* Risk Areas Summary */}
-                {route.riskAreas && route.riskAreas.length > 0 && (
-                  <div className="flex items-center space-x-1 text-sm">
-                    <AlertTriangle className="h-4 w-4 text-amber-500" />
-                    <span>
-                      {route.riskAreas.length} risk {route.riskAreas.length === 1 ? 'area' : 'areas'} detected
-                    </span>
+                {route.geminiAnalysis?.riskScores?.length > 0 && (
+                  <div className={cn("px-2 py-1 rounded-full text-xs font-medium flex items-center",
+                    compact ? "py-0.5" : "")}>
+                    <span className={cn("inline-block w-2 h-2 rounded-full mr-1.5", aiScoreColor)}></span>
+                    AI: {route.geminiAnalysis.averageRiskScore}/100
                   </div>
                 )}
               </div>
-            </CardContent>
-            
-            <CardFooter className="p-3 pt-0">
-              <div className="flex flex-col gap-2 w-full">
-                <div className="w-full bg-muted h-1.5 rounded-full overflow-hidden">
-                  <div 
-                    className={cn("h-full rounded-full", getRiskColorClass(route.riskScore))}
-                    style={{ width: `${route.riskScore * 10}%` }}
-                  ></div>
+              
+              <div className="flex items-center gap-3 mb-2">
+                <div className="flex items-center">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 mr-1.5 text-muted-foreground">
+                    <circle cx="12" cy="12" r="10" className="fill-none stroke-current stroke-[1.5]"></circle>
+                    <polyline points="12,6 12,12 16,14" className="fill-none stroke-current stroke-[1.5]"></polyline>
+                  </svg>
+                  <span className="text-sm">{route.duration}</span>
                 </div>
                 
-                {/* Start Trip Button */}
+                <div className="flex items-center">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 mr-1.5 text-muted-foreground">
+                    <path d="M12 22s-8-4.5-8-11.8a8 8 0 0 1 16 0c0 7.3-8 11.8-8 11.8z" className="fill-none stroke-current stroke-[1.5]"></path>
+                    <circle cx="12" cy="10" r="3" className="fill-none stroke-current stroke-[1.5]"></circle>
+                  </svg>
+                  <span className="text-sm">{route.distance}</span>
+                </div>
+              </div>
+              
+              <div className={cn("w-full h-1.5 bg-muted rounded-full overflow-hidden mb-3", 
+                compact ? "mb-2" : "")}>
+                <div className={cn("h-full", riskColor)} style={{ width: `100%` }}></div>
+              </div>
+              
+              {!compact && onStartTrip && (
                 <Button 
-                  variant="outline"
-                  size="sm"
-                  className="w-full mt-2 text-xs"
+                  variant="outline" 
+                  size="sm" 
                   onClick={(e) => {
-                    e.stopPropagation(); // Prevent route selection when clicking this button
+                    e.stopPropagation();
                     onStartTrip(route);
                   }}
+                  className="w-full"
                   disabled={isStartingTrip}
                 >
-                  {isStartingTrip && selectedRouteId === route.id ? (
+                  {(isStartingTrip && isSelected) ? (
                     <>
-                      <span className="h-3 w-3 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5"></span>
+                      <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5"></span>
                       Starting...
                     </>
                   ) : (
                     <>
-                      <Navigation className="h-3.5 w-3.5 mr-1.5" />
+                      <Navigation className="h-4 w-4 mr-1.5" />
                       Start Trip
                     </>
                   )}
                 </Button>
-              </div>
-            </CardFooter>
-          </Card>
-        ))}
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

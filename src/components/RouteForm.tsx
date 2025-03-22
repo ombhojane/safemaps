@@ -3,9 +3,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
-import { Form, FormControl, FormField, FormItem, FormLabel } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { toast } from "sonner";
-import { Search, MapPin, ArrowRight } from "lucide-react";
+import { Search, Navigation, ArrowRight } from "lucide-react";
 import { Location } from "@/types";
 import { cn } from "@/lib/utils";
 import { PlaceAutocomplete } from "@/components/ui/PlaceAutocomplete";
@@ -26,10 +26,10 @@ interface RouteFormProps {
 }
 
 const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
-  const [expanded, setExpanded] = useState(false);
   const [sourcePlaceId, setSourcePlaceId] = useState<string | undefined>();
   const [destinationPlaceId, setDestinationPlaceId] = useState<string | undefined>();
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showSourceInput, setShowSourceInput] = useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -76,7 +76,7 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
         };
       }
       
-      toast.success("Route request submitted");
+      toast.success("Finding safe routes");
       onSubmit(sourceLocation, destinationLocation);
     } catch (error) {
       console.error("Error processing route request:", error);
@@ -95,101 +95,89 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
   const handleDestinationSelect = (value: string, placeId?: string) => {
     form.setValue("destination", value);
     setDestinationPlaceId(placeId);
+    
+    // Show source input when destination is selected
+    if (value && !showSourceInput) {
+      setShowSourceInput(true);
+    }
   };
 
   return (
-    <div 
-      className={cn(
-        "bg-card rounded-2xl p-4 sm:p-6 transition-all duration-300 ease-in-out",
-        expanded ? "shadow-md" : ""
-      )}
-    >
+    <div className="bg-background/95 backdrop-blur-md rounded-md shadow-md overflow-hidden">
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-5">
-          <div 
-            className="flex items-center cursor-pointer"
-            onClick={() => !expanded && setExpanded(true)}
-          >
-            <Search className="h-5 w-5 text-muted-foreground mr-2" />
-            <h2 className="text-lg font-medium">Find Safe Routes</h2>
-          </div>
-          
-          {expanded && (
-            <div className="space-y-4 animate-once animate-fade-in">
-              <div className="relative">
-                <div className="absolute left-7 top-0 bottom-0 w-0.5 bg-muted z-10"></div>
-                
+        <form onSubmit={form.handleSubmit(handleSubmit)}>
+          <div className="flex flex-col">
+            {/* Destination Input (Always shown) */}
+            <FormField
+              control={form.control}
+              name="destination"
+              render={({ field }) => (
+                <FormItem className="mb-0">
+                  <div className="flex items-center px-3 py-2">
+                    <Search className="h-4 w-4 text-muted-foreground mr-2" />
+                    <FormControl>
+                      <PlaceAutocomplete 
+                        value={field.value}
+                        onChange={handleDestinationSelect}
+                        placeholder="Search for a destination..." 
+                        disabled={isLoading || isProcessing}
+                        className="h-9 w-full border-none shadow-none focus-visible:ring-0 focus-visible:ring-transparent"
+                      />
+                    </FormControl>
+                  </div>
+                </FormItem>
+              )}
+            />
+            
+            {/* Source Input (Shows after destination is entered) */}
+            {showSourceInput && (
+              <div className="border-t">
                 <FormField
                   control={form.control}
                   name="source"
                   render={({ field }) => (
-                    <FormItem className="relative mb-5">
-                      <div className="flex items-center">
-                        <div className="absolute left-0 z-20">
-                          <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-                            <MapPin className="h-6 w-6 text-primary" />
-                          </div>
-                        </div>
-                        <div className="ml-16 flex-1">
-                          <FormLabel>Starting point</FormLabel>
-                          <FormControl>
-                            <PlaceAutocomplete 
-                              value={field.value}
-                              onChange={handleSourceSelect}
-                              placeholder="Enter your starting location" 
-                              disabled={isLoading || isProcessing}
-                            />
-                          </FormControl>
-                        </div>
-                      </div>
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="destination"
-                  render={({ field }) => (
-                    <FormItem className="relative">
-                      <div className="flex items-center">
-                        <div className="absolute left-0 z-20">
-                          <div className="w-14 h-14 rounded-full bg-accent flex items-center justify-center">
-                            <ArrowRight className="h-6 w-6 text-accent-foreground" />
-                          </div>
-                        </div>
-                        <div className="ml-16 flex-1">
-                          <FormLabel>Destination</FormLabel>
-                          <FormControl>
-                            <PlaceAutocomplete 
-                              value={field.value}
-                              onChange={handleDestinationSelect}
-                              placeholder="Enter your destination" 
-                              disabled={isLoading || isProcessing}
-                            />
-                          </FormControl>
-                        </div>
+                    <FormItem className="mb-0">
+                      <div className="flex items-center px-3 py-2">
+                        <ArrowRight className="h-4 w-4 text-muted-foreground mr-2" />
+                        <FormControl>
+                          <PlaceAutocomplete 
+                            value={field.value}
+                            onChange={handleSourceSelect}
+                            placeholder="Choose starting point" 
+                            disabled={isLoading || isProcessing}
+                            className="h-9 w-full border-none shadow-none focus-visible:ring-0 focus-visible:ring-transparent"
+                          />
+                        </FormControl>
                       </div>
                     </FormItem>
                   )}
                 />
               </div>
-              
-              <div className="flex justify-end">
+            )}
+            
+            {/* Directions Button - Only show when both fields have values */}
+            {form.watch("destination") && form.watch("source") && (
+              <div className="p-3 border-t">
                 <Button 
                   type="submit" 
-                  className="px-8"
+                  className="w-full flex items-center justify-center"
                   disabled={isLoading || isProcessing}
                 >
                   {isLoading || isProcessing ? (
                     <>
                       <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                      Analyzing Routes...
+                      Finding routes...
                     </>
-                  ) : "Find Safe Routes"}
+                  ) : (
+                    <>
+                      <Navigation className="h-4 w-4 mr-2" />
+                      Find Safe Routes
+                    </>
+                  )}
                 </Button>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </form>
       </Form>
     </div>
