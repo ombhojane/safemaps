@@ -1,11 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import { Form, FormControl, FormField, FormItem } from "@/components/ui/form";
 import { toast } from "sonner";
-import { Search, Navigation, ArrowRight, MapPin } from "lucide-react";
+import { Search, Navigation, ArrowRight, MapPin, Shield } from "lucide-react";
 import { Location } from "@/types";
 import { cn } from "@/lib/utils";
 import { PlaceAutocomplete } from "@/components/ui/PlaceAutocomplete";
@@ -29,7 +29,10 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
   const [sourcePlaceId, setSourcePlaceId] = useState<string | undefined>();
   const [destinationPlaceId, setDestinationPlaceId] = useState<string | undefined>();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [activeInput, setActiveInput] = useState<'source' | 'destination' | null>(null);
+  const [showSourceInput, setShowSourceInput] = useState(false);
+  const [currentLocationLoading, setCurrentLocationLoading] = useState(false);
+  const destinationInputRef = useRef<HTMLDivElement>(null);
+  const sourceInputRef = useRef<HTMLDivElement>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -39,59 +42,59 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
     },
   });
 
-  // Check if we can enable the find routes button
-  const canSubmit = Boolean(
-    form.watch("source") && 
-    form.watch("destination") && 
-    !isLoading && 
-    !isProcessing
-  );
-
-  // For mobile devices, always show both inputs for better UX
-  const showSourceInput = true;
+  // Auto-focus destination input on mobile
+  useEffect(() => {
+    // Use a small delay to ensure DOM is ready
+    const timer = setTimeout(() => {
+      if (destinationInputRef.current) {
+        const input = destinationInputRef.current.querySelector('input');
+        if (input && window.innerWidth < 768) {
+          input.focus();
+        }
+      }
+    }, 300);
+    
+    return () => clearTimeout(timer);
+  }, []);
 
   const handleSubmit = async (values: z.infer<typeof formSchema>) => {
     try {
-      // Don't proceed if already processing or loading
-      if (isProcessing || isLoading) return;
-      
       setIsProcessing(true);
       
       let sourceLocation: Location | null = null;
       let destinationLocation: Location | null = null;
       
-      // Get detailed information from selected places - run in parallel
-      const [sourceDetails, destinationDetails] = await Promise.all([
-        sourcePlaceId ? getPlaceDetails(sourcePlaceId) : null,
-        destinationPlaceId ? getPlaceDetails(destinationPlaceId) : null
-      ]);
-      
-      if (sourceDetails) {
-        sourceLocation = convertToLocation(sourceDetails);
+      // If we have placeIds, get detailed information from Google Places API
+      if (sourcePlaceId) {
+        const sourceDetails = await getPlaceDetails(sourcePlaceId);
+        if (sourceDetails) {
+          sourceLocation = convertToLocation(sourceDetails);
+        }
       }
       
-      if (destinationDetails) {
-        destinationLocation = convertToLocation(destinationDetails);
+      if (destinationPlaceId) {
+        const destinationDetails = await getPlaceDetails(destinationPlaceId);
+        if (destinationDetails) {
+          destinationLocation = convertToLocation(destinationDetails);
+        }
       }
       
       // If we couldn't get detailed location info, use fallback coordinates
       if (!sourceLocation) {
-        // Use a reasonable fallback
         sourceLocation = {
           name: values.source,
-          coordinates: { lat: 37.7749, lng: -122.4194 } 
+          coordinates: { lat: 37.7749, lng: -122.4194 } // San Francisco coordinates as fallback
         };
       }
       
       if (!destinationLocation) {
-        // Slightly different fallback coordinates
         destinationLocation = {
           name: values.destination,
-          coordinates: { lat: 37.7833, lng: -122.4167 } 
+          coordinates: { lat: 37.7833, lng: -122.4167 } // Slightly north of SF as fallback
         };
       }
       
-      toast.success("Finding the safest routes for you");
+      toast.success("Finding safe routes");
       onSubmit(sourceLocation, destinationLocation);
     } catch (error) {
       console.error("Error processing route request:", error);
@@ -103,103 +106,133 @@ const RouteForm = ({ onSubmit, isLoading }: RouteFormProps) => {
 
   // Handle place selection from autocomplete
   const handleSourceSelect = (value: string, placeId?: string) => {
-    form.setValue("source", value, { shouldValidate: true });
+    form.setValue("source", value);
     setSourcePlaceId(placeId);
-    // If we have a destination, focus away from the input to avoid keyboard issues on mobile
-    if (form.watch("destination")) {
-      setActiveInput(null);
+    
+    // Auto-submit when both inputs are filled
+    if (form.getValues("destination") && placeId) {
+      setTimeout(() => form.handleSubmit(handleSubmit)(), 300);
     }
   };
   
   const handleDestinationSelect = (value: string, placeId?: string) => {
-    form.setValue("destination", value, { shouldValidate: true });
+    form.setValue("destination", value);
     setDestinationPlaceId(placeId);
-    // If we have a source, focus away from the input to avoid keyboard issues on mobile
-    if (form.watch("source")) {
-      setActiveInput(null);
+    
+    // Show source input when destination is selected
+    if (value && !showSourceInput) {
+      setShowSourceInput(true);
+      
+      // Focus the source input after a short delay
+      setTimeout(() => {
+        if (sourceInputRef.current) {
+          const input = sourceInputRef.current.querySelector('input');
+          if (input) {
+            input.focus();
+          }
+        }
+      }, 100);
     }
   };
-
-  const handleFocus = (inputName: 'source' | 'destination') => {
-    setActiveInput(inputName);
+  
+  const useCurrentLocation = async () => {
+    if (!navigator.geolocation) {
+      toast.error("Geolocation is not supported by your browser");
+      return;
+    }
+    
+    setCurrentLocationLoading(true);
+    
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          // Reverse geocode to get address from coordinates
+          const response = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.coords.latitude},${position.coords.longitude}&key=${import.meta.env.VITE_GOOGLE_MAPS_API_KEY}`
+          );
+          
+          if (!response.ok) {
+            throw new Error('Failed to get address from coordinates');
+          }
+          
+          const data = await response.json();
+          
+          if (data.results && data.results.length > 0) {
+            const address = data.results[0].formatted_address;
+            form.setValue("source", address);
+            
+            // Create a synthetic place ID for current location
+            const syntheticPlaceId = `current_location_${position.coords.latitude}_${position.coords.longitude}`;
+            setSourcePlaceId(syntheticPlaceId);
+            
+            // Auto-submit if destination is also set
+            if (form.getValues("destination") && destinationPlaceId) {
+              setTimeout(() => form.handleSubmit(handleSubmit)(), 300);
+            }
+          }
+        } catch (error) {
+          console.error("Error getting current location:", error);
+          toast.error("Failed to get your current location");
+        } finally {
+          setCurrentLocationLoading(false);
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        toast.error("Failed to get your location. Please check your location permissions.");
+        setCurrentLocationLoading(false);
+      }
+    );
   };
 
   return (
     <div className="bg-background/95 backdrop-blur-md rounded-md shadow-md overflow-hidden">
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleSubmit)}>
-          <div className="flex flex-col">
-            {/* Destination Input (Always shown) */}
-            <FormField
-              control={form.control}
-              name="destination"
-              render={({ field }) => (
-                <FormItem className="mb-0">
-                  <div className="flex items-center px-3 py-2">
-                    <MapPin className="h-4 w-4 text-muted-foreground mr-2" />
-                    <FormControl>
-                      <PlaceAutocomplete 
-                        value={field.value}
-                        onChange={handleDestinationSelect}
-                        placeholder="Where to?" 
-                        disabled={isLoading || isProcessing}
-                        className="h-9 w-full border-none shadow-none focus-visible:ring-0 focus-visible:ring-transparent"
-                      />
-                    </FormControl>
-                  </div>
-                </FormItem>
-              )}
+        <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-3 p-3">
+          <div className="grid grid-cols-[auto_1fr] gap-2 items-center">
+            <MapPin className="h-5 w-5 text-primary mt-2" />
+            <PlaceAutocomplete
+              value={form.watch("source")}
+              onChange={(value, placeId) => {
+                form.setValue("source", value);
+                setSourcePlaceId(placeId);
+              }}
+              placeholder="Starting point"
+              disabled={isLoading || isProcessing}
             />
-            
-            {/* Source Input */}
-            {showSourceInput && (
-              <div className="border-t">
-                <FormField
-                  control={form.control}
-                  name="source"
-                  render={({ field }) => (
-                    <FormItem className="mb-0">
-                      <div className="flex items-center px-3 py-2">
-                        <ArrowRight className="h-4 w-4 text-muted-foreground mr-2" />
-                        <FormControl>
-                          <PlaceAutocomplete 
-                            value={field.value}
-                            onChange={handleSourceSelect}
-                            placeholder="Current location or starting point" 
-                            disabled={isLoading || isProcessing}
-                            className="h-9 w-full border-none shadow-none focus-visible:ring-0 focus-visible:ring-transparent"
-                          />
-                        </FormControl>
-                      </div>
-                    </FormItem>
-                  )}
-                />
-              </div>
-            )}
-            
-            {/* Directions Button - Only show when both fields have values */}
-            {canSubmit && (
-              <div className="p-3 border-t">
-                <Button 
-                  type="submit" 
-                  className="w-full flex items-center justify-center"
-                  disabled={isLoading || isProcessing}
-                >
-                  {isLoading || isProcessing ? (
-                    <>
-                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
-                      Finding routes...
-                    </>
-                  ) : (
-                    <>
-                      <Navigation className="h-4 w-4 mr-2" />
-                      Find Safe Routes
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
           </div>
+          
+          <div className="grid grid-cols-[auto_1fr] gap-2 items-center">
+            <MapPin className="h-5 w-5 text-destructive mt-2" />
+            <PlaceAutocomplete
+              value={form.watch("destination")}
+              onChange={(value, placeId) => {
+                form.setValue("destination", value);
+                setDestinationPlaceId(placeId);
+              }}
+              placeholder="Destination"
+              disabled={isLoading || isProcessing}
+            />
+          </div>
+          
+          <Button 
+            type="submit" 
+            className="w-full"
+            size="lg"
+            disabled={isLoading || isProcessing || !(form.watch("source") && form.watch("destination"))}
+          >
+            {isLoading || isProcessing ? (
+              <>
+                <span className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></span>
+                Finding Safe Routes...
+              </>
+            ) : (
+              <>
+                <Shield className="h-5 w-5 mr-2" />
+                Find Safe Routes
+              </>
+            )}
+          </Button>
         </form>
       </Form>
     </div>

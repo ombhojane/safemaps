@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getPlaceSuggestions } from "@/services/placesService";
-import { Loader2, MapPin } from "lucide-react";
+import { Loader2, MapPin, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface AutocompleteResult {
@@ -19,6 +18,7 @@ interface PlaceAutocompleteProps {
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  onSearch?: () => void; // Optional callback when search is triggered
 }
 
 export function PlaceAutocomplete({
@@ -27,26 +27,16 @@ export function PlaceAutocomplete({
   placeholder = "Search for a location...",
   className,
   disabled = false,
+  onSearch,
 }: PlaceAutocompleteProps) {
   const [open, setOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value || "");
   const [suggestions, setSuggestions] = useState<AutocompleteResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | undefined>(undefined);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const isMounted = useRef(true);
-
-  // Track mounting state to prevent state updates after unmount
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const minCharsForSearch = 3;
 
   // Sync input value with external value
   useEffect(() => {
@@ -54,61 +44,75 @@ export function PlaceAutocomplete({
       setInputValue(value);
     }
   }, [value]);
+  
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
-  // Debounced fetch suggestions function
-  const debounceFetchSuggestions = useCallback(async (searchText: string) => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    if (searchText.length < 2) {
+  // Fetch suggestions function
+  const fetchSuggestions = async (searchText: string) => {
+    if (searchText.length < minCharsForSearch) {
       setSuggestions([]);
-      setLoading(false);
       return;
     }
 
     setLoading(true);
     
-    debounceTimerRef.current = setTimeout(async () => {
-      try {
-        const results = await getPlaceSuggestions(searchText);
-        
-        if (isMounted.current) {
-          setSuggestions(results);
-          
-          // Open the popover automatically if we have results
-          if (results.length > 0 && inputRef.current === document.activeElement) {
-            setOpen(true);
-          } else if (results.length === 0) {
-            setOpen(false);
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching suggestions:", error);
-      } finally {
-        if (isMounted.current) {
-          setLoading(false);
-        }
+    try {
+      const results = await getPlaceSuggestions(searchText);
+      console.log("Search results for:", searchText, results);
+      
+      setSuggestions(results);
+      
+      // Only open dropdown if we have results
+      if (results.length > 0) {
+        setOpen(true);
+      } else {
+        setOpen(false);
       }
-    }, 250); // Reduced debounce time for more responsiveness
-  }, []);
-
-  // Fetch suggestions when input changes
-  useEffect(() => {
-    debounceFetchSuggestions(inputValue);
-  }, [inputValue, debounceFetchSuggestions]);
+    } catch (error) {
+      console.error("Error fetching suggestions:", error);
+      setOpen(false);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newValue = e.target.value;
     setInputValue(newValue);
     
-    // Clear the place ID when the user modifies the input
+    // Clear the place ID when user types
     if (selectedPlaceId) {
       setSelectedPlaceId(undefined);
-      onChange(newValue);
-    } else {
-      onChange(newValue);
     }
+    
+    // Update parent component
+    onChange(newValue);
+    
+    // Clear any existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    // Close popover if input is less than min chars
+    if (newValue.length < minCharsForSearch) {
+      setSuggestions([]);
+      setOpen(false);
+      return;
+    }
+    
+    // Set up debounced search for better UX
+    debounceTimerRef.current = setTimeout(() => {
+      if (newValue.length >= minCharsForSearch) {
+        fetchSuggestions(newValue);
+      }
+    }, 500);
   };
 
   const handleSelectPlace = (suggestion: AutocompleteResult) => {
@@ -116,44 +120,24 @@ export function PlaceAutocomplete({
     setSelectedPlaceId(suggestion.placeId);
     onChange(suggestion.fullText, suggestion.placeId);
     setOpen(false);
-    
-    // Give focus back to the input after selection
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 0);
-  };
-
-  const handleInputFocus = () => {
-    // Only show suggestions if we have them and the input has a value
-    if (inputValue.length >= 2) {
-      // If we don't have suggestions yet but have an input value, try to fetch them
-      if (suggestions.length === 0 && !loading) {
-        debounceFetchSuggestions(inputValue);
-      } else if (suggestions.length > 0) {
-        setOpen(true);
-      }
-    }
-  };
-
-  const handleInputBlur = () => {
-    // Use a small delay before closing to allow for selection clicks
-    setTimeout(() => {
-      if (document.activeElement !== inputRef.current) {
-        setOpen(false);
-      }
-    }, 150);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Handle Enter key to trigger search
+    if (e.key === "Enter" && inputValue.length >= minCharsForSearch) {
+      e.preventDefault(); // Prevent form submission
+      
+      // If we have suggestions open, select the first one
+      if (open && suggestions.length > 0) {
+        handleSelectPlace(suggestions[0]);
+      } else {
+        fetchSuggestions(inputValue);
+      }
+    }
+    
     // Handle Escape key to close the popover
     if (e.key === "Escape") {
       setOpen(false);
-      e.preventDefault();
-    }
-    
-    // If down arrow is pressed and suggestions are available, open the popover
-    if (e.key === "ArrowDown" && suggestions.length > 0) {
-      setOpen(true);
       e.preventDefault();
     }
   };
@@ -166,11 +150,9 @@ export function PlaceAutocomplete({
             ref={inputRef}
             value={inputValue}
             onChange={handleInputChange}
-            onFocus={handleInputFocus}
-            onBlur={handleInputBlur}
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
-            className={cn("w-full pr-8", className)}
+            className={cn("w-full", className)}
             disabled={disabled}
             autoComplete="off"
           />
@@ -178,35 +160,50 @@ export function PlaceAutocomplete({
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
-          ) : inputValue ? (
+          ) : inputValue.length > 0 ? (
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
               <MapPin className="h-4 w-4 text-muted-foreground" />
             </div>
           ) : null}
         </div>
       </PopoverTrigger>
+      
       <PopoverContent 
-        className="p-0 w-[var(--radix-popover-trigger-width)]" 
+        className="p-0 w-[var(--radix-popover-trigger-width)] max-h-[300px] overflow-y-auto" 
         align="start"
-        sideOffset={4}
+        sideOffset={5}
       >
-        <Command>
-          <CommandList>
-            <CommandEmpty>No results found</CommandEmpty>
-            <CommandGroup>
-              {suggestions.map((suggestion) => (
-                <CommandItem
-                  key={suggestion.placeId}
-                  onSelect={() => handleSelectPlace(suggestion)}
-                  className="flex flex-col items-start py-2"
-                >
-                  <div className="font-medium">{suggestion.mainText}</div>
-                  <div className="text-sm text-muted-foreground">{suggestion.secondaryText}</div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
+        <div className="overflow-hidden">
+          {suggestions.map((suggestion, index) => (
+            <div
+              key={suggestion.placeId}
+              className={cn(
+                "flex items-center p-3 cursor-pointer hover:bg-slate-50",
+                index < suggestions.length - 1 && "border-b border-slate-100"
+              )}
+              onClick={() => handleSelectPlace(suggestion)}
+            >
+              {index === 0 ? (
+                <div className="flex-shrink-0 mr-4">
+                  <ArrowRight size={20} className="text-gray-500" />
+                </div>
+              ) : (
+                <div className="flex-shrink-0 mr-4">
+                  <MapPin size={20} className="text-gray-500" />
+                </div>
+              )}
+              
+              <div className="flex flex-col min-w-0">
+                <div className="text-[15px] font-medium text-gray-900 leading-tight">
+                  {suggestion.mainText}
+                </div>
+                <div className="text-[13px] text-gray-500 mt-0.5 leading-tight">
+                  {suggestion.secondaryText}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       </PopoverContent>
     </Popover>
   );

@@ -17,14 +17,20 @@ interface PlaceDetails {
   formattedAddress: string;
 }
 
-// Simple in-memory cache for requests
-interface CacheEntry {
-  data: any;
-  timestamp: number;
+// Cache for storing previous API results to reduce redundant requests
+interface Cache {
+  suggestions: Record<string, { results: AutocompleteResult[], timestamp: number }>;
+  details: Record<string, { result: PlaceDetails, timestamp: number }>;
 }
 
-const cache: Record<string, CacheEntry> = {};
-const CACHE_EXPIRY = 5 * 60 * 1000; // 5 minutes
+// Cache expiration time in milliseconds (5 minutes)
+const CACHE_EXPIRATION = 5 * 60 * 1000;
+
+// Initialize cache
+const cache: Cache = {
+  suggestions: {},
+  details: {}
+};
 
 // Set a default location bias for San Francisco
 const DEFAULT_LOCATION_BIAS = {
@@ -40,146 +46,145 @@ const DEFAULT_LOCATION_BIAS = {
 // Get API key from environment variables
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
 
-// Check cache for a value or fetch it
-const getOrFetchData = async (
-  cacheKey: string, 
-  fetchFn: () => Promise<any>
-): Promise<any> => {
-  // Check if we have a cached value that's still valid
-  const cachedData = cache[cacheKey];
-  const now = Date.now();
-  
-  if (cachedData && now - cachedData.timestamp < CACHE_EXPIRY) {
-    return cachedData.data;
-  }
-  
-  // Fetch new data
-  try {
-    const data = await fetchFn();
-    
-    // Cache the result
-    cache[cacheKey] = {
-      data,
-      timestamp: now
-    };
-    
-    return data;
-  } catch (error) {
-    // If the cache has expired but we still have data, use it as fallback
-    if (cachedData) {
-      console.warn('Error fetching fresh data, using expired cache:', error);
-      return cachedData.data;
-    }
-    
-    throw error;
-  }
+// Check if a cache entry is still valid
+const isCacheValid = (timestamp: number): boolean => {
+  return Date.now() - timestamp < CACHE_EXPIRATION;
 };
 
 export const getPlaceSuggestions = async (input: string): Promise<AutocompleteResult[]> => {
   try {
-    if (!input || input.length < 2) return [];
+    // Ensure we have at least 3 characters before searching
+    if (!input || input.length < 3) return [];
     
-    const cacheKey = `autocomplete:${input.toLowerCase()}`;
+    // Normalize the input for caching (trim whitespace, lowercase)
+    const normalizedInput = input.trim().toLowerCase();
     
-    return getOrFetchData(cacheKey, async () => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      try {
-        const response = await fetch(`https://places.googleapis.com/v1/places:autocomplete`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': API_KEY,
-          },
-          body: JSON.stringify({
-            input,
-            locationBias: DEFAULT_LOCATION_BIAS
-          }),
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Places API error: ${response.status} - ${errorText}`);
+    // Check cache for this input
+    if (cache.suggestions[normalizedInput] && isCacheValid(cache.suggestions[normalizedInput].timestamp)) {
+      console.log("[PlacesService] Returning cached results for:", normalizedInput, cache.suggestions[normalizedInput].results);
+      return cache.suggestions[normalizedInput].results;
+    }
+    
+    console.log("[PlacesService] Fetching suggestions for:", normalizedInput);
+    
+    // Add a small artificial delay to prevent flickering UI and improve user experience
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    const response = await fetch(`https://places.googleapis.com/v1/places:autocomplete`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': API_KEY,
+      },
+      body: JSON.stringify({
+        input,
+        locationBias: DEFAULT_LOCATION_BIAS
+      })
+    });
+
+    if (!response.ok) {
+      console.error("[PlacesService] API error:", response.status, response.statusText);
+      throw new Error(`Places API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("[PlacesService] Raw API response:", data);
+    
+    if (!data.suggestions || !Array.isArray(data.suggestions)) {
+      console.warn("[PlacesService] No suggestions found in API response");
+      return [];
+    }
+    
+    console.log("[PlacesService] Received suggestions count:", data.suggestions.length);
+    
+    // Process the results safely with error handling for each suggestion
+    const results = data.suggestions
+      .filter((suggestion: any) => {
+        try {
+          // Verify the suggestion has the required fields
+          const isValid = suggestion?.placePrediction?.placeId && 
+                 suggestion?.placePrediction?.structuredFormat?.mainText?.text &&
+                 suggestion?.placePrediction?.structuredFormat?.secondaryText?.text;
+          
+          if (!isValid) {
+            console.warn("[PlacesService] Filtered out invalid suggestion:", suggestion);
+          }
+          
+          return isValid;
+        } catch (e) {
+          console.error("[PlacesService] Error processing suggestion:", e);
+          return false;
         }
-        
-        const data = await response.json();
-        
-        if (!data.suggestions || !Array.isArray(data.suggestions)) {
-          return [];
-        }
-        
-        return data.suggestions.map((suggestion: any) => ({
+      })
+      .map((suggestion: any) => {
+        const result = {
           placeId: suggestion.placePrediction.placeId,
           mainText: suggestion.placePrediction.structuredFormat.mainText.text,
           secondaryText: suggestion.placePrediction.structuredFormat.secondaryText.text,
-          fullText: suggestion.placePrediction.text.text
-        }));
-      } catch (error) {
-        clearTimeout(timeoutId);
+          fullText: suggestion.placePrediction.text.text || `${suggestion.placePrediction.structuredFormat.mainText.text}, ${suggestion.placePrediction.structuredFormat.secondaryText.text}`
+        };
         
-        if (error.name === "AbortError") {
-          throw new Error("Place suggestions request timed out");
-        }
-        
-        throw error;
-      }
-    });
+        return result;
+      });
+    
+    console.log("[PlacesService] Processed results:", results);
+    
+    // Cache the results
+    cache.suggestions[normalizedInput] = {
+      results,
+      timestamp: Date.now()
+    };
+    
+    return results;
   } catch (error) {
-    console.error("Error fetching place suggestions:", error);
+    console.error("[PlacesService] Error fetching place suggestions:", error);
     return [];
   }
 };
 
 export const getPlaceDetails = async (placeId: string): Promise<PlaceDetails | null> => {
   try {
-    const cacheKey = `placedetails:${placeId}`;
+    // Check cache for this place ID
+    if (cache.details[placeId] && isCacheValid(cache.details[placeId].timestamp)) {
+      return cache.details[placeId].result;
+    }
     
-    return getOrFetchData(cacheKey, async () => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-      
-      try {
-        const response = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
-          method: 'GET',
-          headers: {
-            'X-Goog-Api-Key': API_KEY,
-            'X-Goog-FieldMask': 'displayName,formattedAddress,location',
-          },
-          signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Places API error: ${response.status} - ${errorText}`);
-        }
-        
-        const data = await response.json();
-        
-        return {
-          name: data.displayName?.text || "",
-          coordinates: {
-            lat: data.location?.latitude || 0,
-            lng: data.location?.longitude || 0
-          },
-          placeId: placeId,
-          formattedAddress: data.formattedAddress || ""
-        };
-      } catch (error) {
-        clearTimeout(timeoutId);
-        
-        if (error.name === "AbortError") {
-          throw new Error("Place details request timed out");
-        }
-        
-        throw error;
-      }
+    const response = await fetch(`https://places.googleapis.com/v1/places/${placeId}`, {
+      method: 'GET',
+      headers: {
+        'X-Goog-Api-Key': API_KEY,
+        'X-Goog-FieldMask': 'displayName,formattedAddress,location',
+      },
     });
+
+    if (!response.ok) {
+      throw new Error(`Places API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    // Make sure we have the necessary data
+    if (!data.displayName || !data.location) {
+      throw new Error('Incomplete place details data');
+    }
+    
+    const result = {
+      name: data.displayName.text,
+      coordinates: {
+        lat: data.location.latitude,
+        lng: data.location.longitude
+      },
+      placeId: placeId,
+      formattedAddress: data.formattedAddress
+    };
+    
+    // Cache the result
+    cache.details[placeId] = {
+      result,
+      timestamp: Date.now()
+    };
+    
+    return result;
   } catch (error) {
     console.error("Error fetching place details:", error);
     return null;

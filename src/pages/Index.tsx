@@ -249,16 +249,16 @@ const Index = () => {
         // Hide on mobile when routes are found and showInputs is false
         (!showInputs && routes.length > 0 && window.innerWidth < 1024) ? "opacity-0 pointer-events-none -translate-y-4" : "opacity-100"
       )}>
-        <RouteForm onSubmit={handleRouteSubmit} isLoading={isLoading} />
-      </div>
-      
-      {/* Error Message */}
-      {error && (
-        <div className="absolute top-28 left-4 z-10 w-full max-w-md p-4 bg-destructive/90 text-destructive-foreground rounded-lg shadow-lg">
-          <p>{error}</p>
+          <RouteForm onSubmit={handleRouteSubmit} isLoading={isLoading} />
         </div>
-      )}
-      
+        
+      {/* Error Message */}
+        {error && (
+        <div className="absolute top-28 left-4 z-10 w-full max-w-md p-4 bg-destructive/90 text-destructive-foreground rounded-lg shadow-lg">
+            <p>{error}</p>
+          </div>
+        )}
+        
       {/* Loading Indicator */}
       {isLoading && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-20 bg-background/80 backdrop-blur-sm p-6 rounded-xl shadow-lg">
@@ -267,9 +267,9 @@ const Index = () => {
             <h3 className="text-lg font-medium">Analyzing Routes</h3>
             <p className="text-muted-foreground text-center mt-2 max-w-xs">
               Scanning all possible routes and analyzing risk factors
-            </p>
+              </p>
+            </div>
           </div>
-        </div>
       )}
       
       {/* Sidebar for route info - slides in from left - Desktop Only */}
@@ -291,58 +291,58 @@ const Index = () => {
             </div>
             
             {/* Selected Route Details */}
-            {selectedRoute && (
+              {selectedRoute && (
               <div className="bg-card rounded-lg border p-4 shadow-sm mb-4">
-                <div className="flex justify-between items-start mb-3">
-                  <h2 className="text-lg font-medium">Route Details</h2>
+                  <div className="flex justify-between items-start mb-3">
+                    <h2 className="text-lg font-medium">Route Details</h2>
+                    
+                    {/* Start Trip Button */}
+                    <Button 
+                      onClick={() => handleStartTrip(selectedRoute)}
+                      className="text-sm"
+                      disabled={isStartingTrip}
+                    >
+                      {isStartingTrip ? (
+                        <>
+                          <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5"></span>
+                          Starting...
+                        </>
+                      ) : (
+                        <>
+                          <Navigation className="h-4 w-4 mr-1.5" />
+                          Start Trip
+                        </>
+                      )}
+                    </Button>
+                  </div>
                   
-                  {/* Start Trip Button */}
-                  <Button 
-                    onClick={() => handleStartTrip(selectedRoute)}
-                    className="text-sm"
-                    disabled={isStartingTrip}
-                  >
-                    {isStartingTrip ? (
-                      <>
-                        <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5"></span>
-                        Starting...
-                      </>
-                    ) : (
-                      <>
-                        <Navigation className="h-4 w-4 mr-1.5" />
-                        Start Trip
-                      </>
-                    )}
-                  </Button>
-                </div>
-                
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-1">Distance</h3>
-                    <p className="text-lg">{selectedRoute.distance}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-1">Duration</h3>
-                    <p className="text-lg">{selectedRoute.duration}</p>
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-medium text-muted-foreground mb-1">Risk Score</h3>
-                    <p className="text-lg">{selectedRoute.riskScore.toFixed(1)}/10</p>
-                  </div>
-                  
-                  {/* Gemini AI Analysis */}
-                  <div>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-1">Distance</h3>
+                      <p className="text-lg">{selectedRoute.distance}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-1">Duration</h3>
+                      <p className="text-lg">{selectedRoute.duration}</p>
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-medium text-muted-foreground mb-1">Risk Score</h3>
+                      <p className="text-lg">{selectedRoute.riskScore.toFixed(1)}/10</p>
+                    </div>
+                    
+                    {/* Gemini AI Analysis */}
+                    <div>
                     <h3 className="text-sm font-medium text-muted-foreground mb-1">AI Safety Score</h3>
-                    {selectedRoute.geminiAnalysis?.isAnalyzing ? (
-                      <div className="flex items-center gap-1.5">
-                        <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
-                        <span className="text-sm">Analyzing...</span>
-                      </div>
-                    ) : selectedRoute.geminiAnalysis?.riskScores?.length > 0 ? (
-                      <p className="text-lg">
-                        {selectedRoute.geminiAnalysis.averageRiskScore}/100
-                      </p>
-                    ) : (
+                      {selectedRoute.geminiAnalysis?.isAnalyzing ? (
+                        <div className="flex items-center gap-1.5">
+                          <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                          <span className="text-sm">Analyzing...</span>
+                        </div>
+                      ) : selectedRoute.geminiAnalysis?.riskScores?.length > 0 ? (
+                        <p className="text-lg">
+                          {selectedRoute.geminiAnalysis.averageRiskScore}/100
+                        </p>
+                      ) : (
                       <Button 
                         variant="ghost" 
                         className="text-xs p-0 h-auto underline text-muted-foreground hover:text-foreground"
@@ -350,73 +350,73 @@ const Index = () => {
                       >
                         Analyze with AI
                       </Button>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Add AI Safety Analysis details card if analysis is complete */}
-                {selectedRoute.geminiAnalysis?.riskScores?.length > 0 && (
-                  <div className="p-3 border rounded-lg bg-muted/30 mb-4">
-                    <div className="flex items-start gap-2">
-                      <BarChart className="h-5 w-5 text-primary mt-0.5" />
-                      <div>
-                        <h3 className="text-sm font-medium mb-1">AI Safety Analysis</h3>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          Street View analysis detected these risk factors along the route:
-                        </p>
-                        
-                        <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-1">
-                          <div 
-                            className={cn(
-                              "h-full",
-                              selectedRoute.geminiAnalysis.averageRiskScore <= 30 ? "bg-green-500" :
-                              selectedRoute.geminiAnalysis.averageRiskScore <= 60 ? "bg-yellow-500" :
-                              "bg-red-500"
-                            )}
-                            style={{ width: `${selectedRoute.geminiAnalysis.averageRiskScore}%` }}
-                          ></div>
-                        </div>
-                        
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>Low Risk</span>
-                          <span>Medium Risk</span>
-                          <span>High Risk</span>
-                        </div>
-                        
-                        {/* Key Insights from Analysis */}
-                        {selectedRoute.geminiAnalysis.explanations?.length > 0 && (
-                          <div className="mt-3 border-t pt-3">
-                            <h4 className="text-sm font-medium mb-2">Key Insights:</h4>
-                            <ul className="text-sm space-y-1.5">
-                              {selectedRoute.geminiAnalysis.explanations.slice(0, 3).map((explanation, index) => (
-                                <li key={index} className="flex items-start gap-2">
-                                  <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                                  <span>{explanation}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                        
-                        {/* Precautions from Analysis */}
-                        {selectedRoute.geminiAnalysis.precautions?.length > 0 && (
-                          <div className="mt-3 border-t pt-3">
-                            <h4 className="text-sm font-medium mb-2">Safety Precautions:</h4>
-                            <ul className="text-sm space-y-1.5">
-                              {selectedRoute.geminiAnalysis.precautions.slice(0, 3).map((precaution, index) => (
-                                <li key={index} className="flex items-start gap-2">
-                                  <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                                  <span className="text-muted-foreground">{precaution}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
-                )}
-                
+                  
+                  {/* Add AI Safety Analysis details card if analysis is complete */}
+                  {selectedRoute.geminiAnalysis?.riskScores?.length > 0 && (
+                    <div className="p-3 border rounded-lg bg-muted/30 mb-4">
+                      <div className="flex items-start gap-2">
+                        <BarChart className="h-5 w-5 text-primary mt-0.5" />
+                        <div>
+                          <h3 className="text-sm font-medium mb-1">AI Safety Analysis</h3>
+                          <p className="text-sm text-muted-foreground mb-2">
+                            Street View analysis detected these risk factors along the route:
+                          </p>
+                          
+                          <div className="w-full h-3 bg-muted rounded-full overflow-hidden mb-1">
+                            <div 
+                              className={cn(
+                                "h-full",
+                                selectedRoute.geminiAnalysis.averageRiskScore <= 30 ? "bg-green-500" :
+                                selectedRoute.geminiAnalysis.averageRiskScore <= 60 ? "bg-yellow-500" :
+                                "bg-red-500"
+                              )}
+                              style={{ width: `${selectedRoute.geminiAnalysis.averageRiskScore}%` }}
+                            ></div>
+                          </div>
+                          
+                          <div className="flex justify-between text-xs text-muted-foreground">
+                            <span>Low Risk</span>
+                            <span>Medium Risk</span>
+                            <span>High Risk</span>
+                          </div>
+                          
+                          {/* Key Insights from Analysis */}
+                          {selectedRoute.geminiAnalysis.explanations?.length > 0 && (
+                            <div className="mt-3 border-t pt-3">
+                              <h4 className="text-sm font-medium mb-2">Key Insights:</h4>
+                              <ul className="text-sm space-y-1.5">
+                                {selectedRoute.geminiAnalysis.explanations.slice(0, 3).map((explanation, index) => (
+                                  <li key={index} className="flex items-start gap-2">
+                                    <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                                    <span>{explanation}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          
+                          {/* Precautions from Analysis */}
+                          {selectedRoute.geminiAnalysis.precautions?.length > 0 && (
+                            <div className="mt-3 border-t pt-3">
+                              <h4 className="text-sm font-medium mb-2">Safety Precautions:</h4>
+                              <ul className="text-sm space-y-1.5">
+                                {selectedRoute.geminiAnalysis.precautions.slice(0, 3).map((precaution, index) => (
+                                  <li key={index} className="flex items-start gap-2">
+                                    <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                    <span className="text-muted-foreground">{precaution}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
                 <Tabs defaultValue="streetview" className="w-full">
                   <TabsList className="mb-4">
                     <TabsTrigger value="streetview" className="flex items-center gap-1">
@@ -617,26 +617,26 @@ const Index = () => {
           </div>
           
           {/* Fixed bottom action button */}
-          {selectedRoute && (
+      {selectedRoute && (
             <div className="p-4 border-t bg-background sticky bottom-0 left-0 right-0">
-              <Button 
-                onClick={() => handleStartTrip(selectedRoute)}
+          <Button 
+            onClick={() => handleStartTrip(selectedRoute)}
                 className="w-full"
-                size="lg"
-                disabled={isStartingTrip}
-              >
-                {isStartingTrip ? (
-                  <>
-                    <span className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></span>
-                    Starting Trip...
-                  </>
-                ) : (
-                  <>
-                    <Navigation className="h-5 w-5 mr-2" />
-                    Start Trip
-                  </>
-                )}
-              </Button>
+            size="lg"
+            disabled={isStartingTrip}
+          >
+            {isStartingTrip ? (
+              <>
+                <span className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></span>
+                Starting Trip...
+              </>
+            ) : (
+              <>
+                <Navigation className="h-5 w-5 mr-2" />
+                Start Trip
+              </>
+            )}
+          </Button>
             </div>
           )}
         </div>
