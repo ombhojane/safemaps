@@ -45,25 +45,105 @@ export const analyzeStreetViewImage = async (imageUrl: string): Promise<ImageAna
     // Convert Blob to base64 data URL
     const base64String = await blobToBase64(imageBlob);
     
-    // Set up prompt for image analysis
-    const prompt = `
-      Analyze this street view image for driving safety and road conditions.
-      
-      1. Rate the overall risk level on a scale of 0-100, where:
-         0 = Completely safe with no visible risks
-         50 = Moderate risk with some potential hazards
-         100 = Extremely dangerous with multiple severe hazards
-      
-      2. Provide a single, concise sentence explaining the main safety concern or feature visible in this image.
-      
-      3. Give one short, practical precaution drivers should take when driving through this area.
-      
-      Format your response exactly like this with one line for each:
-      Risk Score: [number 0-100]
-      Explanation: [one concise sentence about main safety feature or concern]
-      Precaution: [one brief, actionable driving tip]
+    const systemInstructions = `
+    You are analyzing street view images for driving safety in India. Follow these precise calibration guidelines:
+
+    1. SCORING CALIBRATION:
+    - Good, normal roads with minimal hazards should score in the 15-25 range
+    - Well-maintained highways with proper infrastructure: 15-20
+    - Decent urban/rural roads with minor imperfections: 20-30
+    - Roads with moderate safety concerns: 30-45
+    - Roads with significant hazards: 45-60
+    - Reserve scores above 60 for dangerous conditions requiring exceptional caution
+    - Scores below 15 indicate exceptionally safe, well-maintained roads with superior infrastructure
+
+    2. CRITICAL SAFETY FACTORS (must increase score significantly):
+    - Blind curves or severely limited visibility: +10-15 points
+    - Dangerous intersections without proper controls: +10-15 points
+    - Very narrow roads with two-way traffic: +10-15 points
+    - Heavy traffic with significant congestion: +8-12 points
+    - Presence of heavy vehicles in constrained spaces: +8-12 points
+    - Significant road damage or obstructions: +8-12 points
+    - Poor lighting in night conditions: +8-12 points
+    - Areas with mixed, unpredictable traffic flows: +5-10 points
+    - Construction zones with inadequate marking: +5-10 points
+
+    3. REGIONAL CONTEXT ADJUSTMENTS:
+    - Standard narrow roads common in India should receive modest scores (5-10)
+    - Consider typical Indian road widths as baseline (5-8 points)
+    - Absence of median barriers is common in India (add only 2-5 points unless on high-speed roads)
+    - Normal Indian traffic density should receive modest scores (5-8)
+    - Mixed vehicle types are standard in India (add points only for extreme diversity)
+    - The presence of occasional pedestrians is common in India (add points only for heavy pedestrian activity)
+    - Common minor road imperfections should receive minimal scores (1-3)
+    - Judge road surface quality relative to local norms, not international standards
+
+    4. AVOIDING UNDER-SCORING OF HAZARDS:
+    - Do not minimize real safety hazards present in the image
+    - If multiple safety concerns are present, they should have a cumulative effect
+    - Carefully evaluate visibility, road geometry, and traffic patterns
+    - Properly account for situations requiring heightened driver attention
+    - Never rate a road with significant hazards below 30
+
+    5. OUTPUT FORMAT:
+    - Provide only the Risk Score, Explanation, and Precaution in your response
+    - Do not include scoring criteria or calibration guidelines in your output
     `;
-    
+
+    const userPrompt = `
+    Analyze this street view image for driving safety and road conditions, focusing on evidence-based risk factors.
+
+    Evaluate the following key safety parameters:
+
+    ROAD INFRASTRUCTURE (0-30 points):
+    - Road type and design: Evaluate road geometry, curves, grades, and design hazards (0-10)
+    - Lane width and count: Assess adequate space for vehicle operation (0-6)
+    - Dividers/barriers: Note presence or absence of median barriers and guardrails (0-5)
+    - Shoulder conditions: Evaluate space available for emergency stops (0-4)
+    - Intersection complexity: Consider junction design and control measures (0-3)
+    - Special structures: Note bridges, tunnels, or other specialized road features (0-2)
+
+    TRAFFIC CONDITIONS (0-25 points):
+    - Congestion: Assess vehicle density and flow constraints (0-10)
+    - Merging zones: Identify areas requiring lane changes or merging (0-5)
+    - Vehicle mix: Note diversity of vehicle types (trucks, cars, two-wheelers) (0-5)
+    - Traffic patterns: Evaluate predictability and consistency of traffic flow (0-5)
+
+    ENVIRONMENTAL FACTORS (0-20 points):
+    - Weather conditions: Assess precipitation, fog, or other weather impacts (0-6)
+    - Lighting conditions: Evaluate natural and artificial lighting adequacy (0-5)
+    - Visibility: Note sight distance limitations from curves, hills, or obstructions (0-6)
+    - Road surface: Identify wet, icy, or degraded surface conditions (0-3)
+
+    HUMAN FACTORS (0-15 points):
+    - Pedestrian zones: Note areas with pedestrian presence or crossings (0-5)
+    - Construction: Identify work zones or temporary road configurations (0-4)
+    - Attention demands: Assess navigation complexity and decision points (0-3)
+    - Unpredictable elements: Note potential for sudden changes (shops, bus stops) (0-3)
+
+    INFRASTRUCTURE QUALITY (0-10 points):
+    - Road surface quality: Assess pavement condition and maintenance (0-4)
+    - Street lighting: Evaluate presence and adequacy of illumination (0-2)
+    - Traffic signals/signs: Note presence and condition of traffic controls (0-4)
+
+    TOTAL RISK SCORE GUIDELINES: 
+    - Baseline for a typical good, normal road is 15-25 points
+    - Roads with moderate safety concerns: 30-45
+    - Roads with significant hazards: 45-60
+    - Roads with critical dangers: 60+
+    - Consider cumulative effects of multiple hazards
+    - Accurately identify and score significant safety issues
+
+    Calculate a TOTAL RISK SCORE by adding points across all categories, where higher points indicate higher risk.
+
+    Format your response exactly like this with one line for each:
+    Risk Score: [number 0-100]
+    Explanation: [one concise sentence about main safety feature or concern]
+    Precaution: [one brief, actionable driving tip]
+    `;
+
+    const prompt = systemInstructions + "\n\n" + userPrompt;
+
     // Send the image and prompt to Gemini
     const result = await model.generateContent({
       contents: [
