@@ -19,6 +19,7 @@ interface MapProps {
   selectedRouteId?: string;
   onRouteSelect?: (routeId: string) => void;
   className?: string;
+  currentLocation?: Location | null;
 }
 
 const Map = forwardRef<HTMLDivElement, MapProps>(({
@@ -26,12 +27,14 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
   selectedRouteId,
   onRouteSelect,
   className,
+  currentLocation = null
 }, ref) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [googleMap, setGoogleMap] = useState<any>(null);
   const routePolylinesRef = useRef<any[]>([]);
   const markersRef = useRef<any[]>([]);
+  const currentLocationMarkerRef = useRef<any>(null);
 
   // Load Google Maps API
   useEffect(() => {
@@ -87,7 +90,7 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
 
   // Update routes on the map
   useEffect(() => {
-    if (!googleMap || !routes.length || !window.google) return;
+    if (!googleMap || !window.google) return;
 
     try {
       // Clear existing route polylines
@@ -98,45 +101,45 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
       markersRef.current.forEach(marker => marker.setMap(null));
       markersRef.current = [];
 
-      // Create bounds to contain all routes
-      const bounds = new window.google.maps.LatLngBounds();
-
-      // Create polylines for each route
-      routes.forEach((route, index) => {
-        // Decode polyline if needed
-        const points = route.points.map(point => point.coordinates);
-        
-        // Create a polyline for the route
-        const isSelected = route.id === selectedRouteId;
-        
-        const polyline = new window.google.maps.Polyline({
-          path: points,
-          geodesic: true,
-          strokeColor: getRiskColor(route.riskScore, isSelected),
-          strokeOpacity: isSelected ? 1.0 : 0.7,
-          strokeWeight: isSelected ? 5 : 3,
-          map: googleMap,
-          zIndex: isSelected ? 10 : index
-        });
-        
-        // Add click handler for route selection
-        if (onRouteSelect) {
-          polyline.addListener("click", () => {
-            onRouteSelect(route.id);
-          });
-        }
-        
-        // Store the polyline for later cleanup
-        routePolylinesRef.current.push(polyline);
-        
-        // Extend bounds to include this route
-        points.forEach(point => {
-          bounds.extend(point);
-        });
-      });
-
-      // Add markers for source and destination
       if (routes.length > 0) {
+        // Create bounds to contain all routes
+        const bounds = new window.google.maps.LatLngBounds();
+
+        // Create polylines for each route
+        routes.forEach((route, index) => {
+          // Decode polyline if needed
+          const points = route.points.map(point => point.coordinates);
+          
+          // Create a polyline for the route
+          const isSelected = route.id === selectedRouteId;
+          
+          const polyline = new window.google.maps.Polyline({
+            path: points,
+            geodesic: true,
+            strokeColor: getRiskColor(route.riskScore, isSelected),
+            strokeOpacity: isSelected ? 1.0 : 0.7,
+            strokeWeight: isSelected ? 5 : 3,
+            map: googleMap,
+            zIndex: isSelected ? 10 : index
+          });
+          
+          // Add click handler for route selection
+          if (onRouteSelect) {
+            polyline.addListener("click", () => {
+              onRouteSelect(route.id);
+            });
+          }
+          
+          // Store the polyline for later cleanup
+          routePolylinesRef.current.push(polyline);
+          
+          // Extend bounds to include this route
+          points.forEach(point => {
+            bounds.extend(point);
+          });
+        });
+
+        // Add markers for source and destination
         const { source, destination } = routes[0]; // All routes have the same source/destination
         
         // Source marker
@@ -175,11 +178,69 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
         
         // Fit map to bounds
         googleMap.fitBounds(bounds, 50); // 50px padding
+      } else if (currentLocation) {
+        // If we don't have routes but do have current location, center on that
+        googleMap.setCenter(currentLocation.coordinates);
+        googleMap.setZoom(15);
       }
     } catch (error) {
       console.error("Error updating routes on map:", error);
     }
   }, [googleMap, routes, selectedRouteId, onRouteSelect]);
+
+  // Update current location marker when it changes
+  useEffect(() => {
+    if (!googleMap || !window.google) return;
+    
+    try {
+      // Clear existing current location marker
+      if (currentLocationMarkerRef.current) {
+        currentLocationMarkerRef.current.setMap(null);
+        currentLocationMarkerRef.current = null;
+      }
+      
+      // If we have a current location, add a marker for it
+      if (currentLocation) {
+        const marker = new window.google.maps.Marker({
+          position: currentLocation.coordinates,
+          map: googleMap,
+          title: "Your Location",
+          animation: window.google.maps.Animation.DROP,
+          icon: {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            fillColor: "#8b5cf6", // Purple
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 8
+          }
+        });
+        
+        // Add a pulsating circle around the current location
+        const circle = new window.google.maps.Circle({
+          strokeColor: "#8b5cf6",
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillColor: "#8b5cf6",
+          fillOpacity: 0.2,
+          map: googleMap,
+          center: currentLocation.coordinates,
+          radius: 50, // 50 meters
+          animation: window.google.maps.Animation.DROP
+        });
+        
+        currentLocationMarkerRef.current = marker;
+        
+        // If no routes are showing yet, center map on current location
+        if (routes.length === 0) {
+          googleMap.setCenter(currentLocation.coordinates);
+          googleMap.setZoom(15);
+        }
+      }
+    } catch (error) {
+      console.error("Error updating current location marker:", error);
+    }
+  }, [googleMap, currentLocation, routes.length]);
 
   // Update selected route when it changes
   useEffect(() => {

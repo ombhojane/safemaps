@@ -5,7 +5,7 @@ import RouteList from "@/components/RouteList";
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route } from "@/types";
 import { computeRoutes, generateNavigationUrl } from "@/services/mapsService";
-import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Layers, Menu, X, ChevronUp, ChevronDown } from "lucide-react";
+import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Menu, X, ChevronUp, ChevronDown, Twitter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ const Index = () => {
   const startDragPositionRef = useRef<number>(0);
   const sheetHeightRef = useRef<number>(0);
   const [showInputs, setShowInputs] = useState(true);
+  const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
 
   const handleRouteSubmit = async (source: Location, destination: Location) => {
     setIsLoading(true);
@@ -194,6 +195,11 @@ const Index = () => {
     });
   };
 
+  // Handle current location change from RouteForm
+  const handleSourceLocationChange = (location: Location | null) => {
+    setCurrentLocation(location);
+  };
+
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col relative">
       {/* Map Background - Full Size */}
@@ -203,6 +209,7 @@ const Index = () => {
           selectedRouteId={selectedRouteId}
           onRouteSelect={handleRouteSelect}
           className="h-full w-full"
+          currentLocation={currentLocation}
         />
       </div>
       
@@ -236,8 +243,13 @@ const Index = () => {
                 {showInputs ? <X className="h-5 w-5" /> : <MapPin className="h-5 w-5" />}
               </Button>
             )}
-            <Button variant="ghost" size="icon" className="bg-background/80 backdrop-blur-sm hover:bg-background/90 rounded-full shadow-md">
-              <Layers className="h-5 w-5" />
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="bg-background/80 backdrop-blur-sm hover:bg-background/90 rounded-full shadow-md"
+              onClick={() => window.open('https://x.com/ombhojane05', '_blank')}
+            >
+              <Twitter className="h-5 w-5" />
             </Button>
           </div>
         </div>
@@ -249,7 +261,11 @@ const Index = () => {
         // Hide on mobile when routes are found and showInputs is false
         (!showInputs && routes.length > 0 && window.innerWidth < 1024) ? "opacity-0 pointer-events-none -translate-y-4" : "opacity-100"
       )}>
-          <RouteForm onSubmit={handleRouteSubmit} isLoading={isLoading} />
+          <RouteForm 
+            onSubmit={handleRouteSubmit} 
+            isLoading={isLoading} 
+            onSourceLocationChange={handleSourceLocationChange}
+          />
         </div>
         
       {/* Error Message */}
