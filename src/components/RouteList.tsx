@@ -1,10 +1,12 @@
 import { Route } from "@/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { AlertTriangle, Clock, Route as RouteIcon, Gauge, BarChart, CheckCircle2, Loader2, Navigation } from "lucide-react";
+import { AlertTriangle, Clock, Route as RouteIcon, Gauge, BarChart, CheckCircle2, Loader2, Navigation, Cloud, Sun, CloudRain, Thermometer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { generateNavigationUrl } from "@/services/mapsService";
+import { getWeatherIconUrl } from "@/services/weatherService";
+import { useEffect, useState } from "react";
 
 interface RouteListProps {
   routes: Route[];
@@ -25,6 +27,15 @@ const RouteList = ({
   className,
   compact = false
 }: RouteListProps) => {
+  // Add a key to force re-render when routes change
+  const [routesKey, setRoutesKey] = useState(0);
+  
+  // Update key when routes change to ensure re-render
+  useEffect(() => {
+    setRoutesKey(prev => prev + 1);
+  }, [routes.map(r => r.geminiAnalysis?.isAnalyzing).join(','), 
+      routes.map(r => r.geminiAnalysis?.averageRiskScore).join(',')]);
+  
   if (!routes || routes.length === 0) {
     return null;
   }
@@ -47,8 +58,23 @@ const RouteList = ({
     return "bg-red-500";
   };
 
+  // Weather icon component based on weather condition
+  const WeatherIcon = ({ condition }: { condition: string }) => {
+    const lowerCondition = condition.toLowerCase();
+    
+    if (lowerCondition.includes('clear') || lowerCondition.includes('sunny')) {
+      return <Sun className="h-4 w-4 text-yellow-500" />;
+    } else if (lowerCondition.includes('rain') || lowerCondition.includes('drizzle')) {
+      return <CloudRain className="h-4 w-4 text-blue-500" />;
+    } else if (lowerCondition.includes('cloud')) {
+      return <Cloud className="h-4 w-4 text-gray-500" />;
+    } else {
+      return <Cloud className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
   return (
-    <div className={cn("space-y-4", className)}>
+    <div key={routesKey} className={cn("space-y-4", className)}>
       <div className="flex justify-between items-center mb-1">
         <h2 className="text-lg font-medium">Available Routes ({routes.length})</h2>
       </div>
@@ -101,6 +127,14 @@ const RouteList = ({
                     AI: {route.geminiAnalysis.averageRiskScore}/100
                   </div>
                 )}
+
+                {route.weather && (
+                  <div className={cn("px-2 py-1 rounded-full text-xs font-medium flex items-center gap-1",
+                    compact ? "py-0.5" : "")}>
+                    <WeatherIcon condition={route.weather.condition} />
+                    <span>{route.weather.condition}</span>
+                  </div>
+                )}
               </div>
               
               <div className="flex items-center gap-3 mb-2">
@@ -119,12 +153,25 @@ const RouteList = ({
                   </svg>
                   <span className="text-sm">{route.distance}</span>
                 </div>
+                
+                {route.weather && (
+                  <div className="flex items-center">
+                    <Thermometer className="h-4 w-4 mr-1.5 text-muted-foreground" />
+                    <span className="text-sm">{route.weather.temperature.toFixed(1)}°C</span>
+                  </div>
+                )}
               </div>
-              
+
               <div className={cn("w-full h-1.5 bg-muted rounded-full overflow-hidden mb-3", 
                 compact ? "mb-2" : "")}>
                 <div className={cn("h-full", riskColor)} style={{ width: `100%` }}></div>
               </div>
+              
+              {!compact && route.geminiAnalysis?.explanations && route.geminiAnalysis.explanations.length > 0 && (
+                <div className="mb-3 text-sm text-muted-foreground">
+                  <p className="line-clamp-2">{route.geminiAnalysis.explanations[0]}</p>
+                </div>
+              )}
               
               {!compact && onStartTrip && (
                 <Button 

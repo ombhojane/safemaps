@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import Map from "@/components/Map";
 import RouteForm from "@/components/RouteForm";
 import RouteList from "@/components/RouteList";
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route } from "@/types";
-import { computeRoutes, generateNavigationUrl } from "@/services/mapsService";
+import { computeRoutes, generateNavigationUrl, ROUTE_ANALYSIS_COMPLETE_EVENT } from "@/services/mapsService";
 import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Menu, X, ChevronUp, ChevronDown, Twitter } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -113,6 +113,16 @@ const Index = () => {
   // Get the selected route object
   const selectedRoute = routes.find(route => route.id === selectedRouteId);
 
+  // Create a unique key for the route details that changes when analysis state changes
+  const routeDetailsKey = useMemo(() => {
+    if (!selectedRoute) return 'no-route';
+    const isAnalyzing = selectedRoute.geminiAnalysis?.isAnalyzing ? 'analyzing' : 'not-analyzing';
+    const analysisScore = selectedRoute.geminiAnalysis?.averageRiskScore || 0;
+    return `route-${selectedRoute.id}-${isAnalyzing}-${analysisScore}`;
+  }, [selectedRoute, 
+      selectedRoute?.geminiAnalysis?.isAnalyzing, 
+      selectedRoute?.geminiAnalysis?.averageRiskScore]);
+
   // Setup touch event handlers for the bottom sheet
   useEffect(() => {
     const sheet = bottomSheetRef.current;
@@ -199,6 +209,35 @@ const Index = () => {
   const handleSourceLocationChange = (location: Location | null) => {
     setCurrentLocation(location);
   };
+
+  // Listen for route analysis completion events
+  useEffect(() => {
+    const handleRouteAnalysisComplete = (event: CustomEvent) => {
+      const { routeId, analysis } = event.detail;
+      setRoutes(prevRoutes => 
+        prevRoutes.map(route => 
+          route.id === routeId ? {
+            ...route,
+            geminiAnalysis: analysis
+          } : route
+        )
+      );
+    };
+
+    // Add event listener
+    window.addEventListener(
+      ROUTE_ANALYSIS_COMPLETE_EVENT, 
+      handleRouteAnalysisComplete as EventListener
+    );
+
+    // Clean up event listener
+    return () => {
+      window.removeEventListener(
+        ROUTE_ANALYSIS_COMPLETE_EVENT, 
+        handleRouteAnalysisComplete as EventListener
+      );
+    };
+  }, []);
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col relative">
@@ -308,7 +347,7 @@ const Index = () => {
             
             {/* Selected Route Details */}
               {selectedRoute && (
-              <div className="bg-card rounded-lg border p-4 shadow-sm mb-4">
+              <div key={routeDetailsKey} className="bg-card rounded-lg border p-4 shadow-sm mb-4">
                   <div className="flex justify-between items-start mb-3">
                     <h2 className="text-lg font-medium">Route Details</h2>
                     
@@ -501,7 +540,7 @@ const Index = () => {
             
             {/* Route details (shown when expanded) */}
             {selectedRoute && bottomSheetState !== 'peek' && (
-              <div className="bg-card rounded-lg border p-4 shadow-sm mb-4">
+              <div key={routeDetailsKey} className="bg-card rounded-lg border p-4 shadow-sm mb-4">
                 <div className="flex justify-between items-start mb-3">
                   <h2 className="text-lg font-medium">Route Details</h2>
                 </div>

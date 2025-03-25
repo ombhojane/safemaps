@@ -41,6 +41,15 @@ export interface Route {
     explanations?: string[];
     precautions?: string[];
   };
+  // Add weather information
+  weather?: {
+    condition: string;
+    temperature: number;
+    description: string;
+    icon: string;
+    humidity: number;
+    windSpeed: number;
+  };
 }
 
 export interface RiskArea {

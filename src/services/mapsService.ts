@@ -1,8 +1,23 @@
 import { Location, Route, RoutePoint } from "@/types";
 import { analyzeStreetViewImages, calculateAverageRiskScore } from "@/services/geminiService";
+import { getRouteLocationWeather, getWeatherCondition } from "@/services/weatherService";
 
 // Get API key from environment variables
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+
+// Define a custom event for route analysis updates
+export const ROUTE_ANALYSIS_COMPLETE_EVENT = 'route-analysis-complete';
+
+// Custom event to dispatch when route analysis is complete
+export const dispatchRouteAnalysisComplete = (route: Route) => {
+  const event = new CustomEvent(ROUTE_ANALYSIS_COMPLETE_EVENT, { 
+    detail: { 
+      routeId: route.id,
+      analysis: route.geminiAnalysis
+    } 
+  });
+  window.dispatchEvent(event);
+};
 
 interface ComputeRoutesResponse {
   routes: {
@@ -128,6 +143,13 @@ export const computeRoutes = async (
       return [createMockRoute(source, destination)];
     }
     
+    // Fetch weather data for the source location only once
+    // This will be used for all routes
+    const weatherData = await getRouteLocationWeather(
+      source.coordinates.lat,
+      source.coordinates.lng
+    );
+    
     // Process the routes data
     const routes = data.routes.map((route, index) => {
       // Check if route has required properties
@@ -162,7 +184,8 @@ export const computeRoutes = async (
       // Generate street view images for the route
       const streetViewImages = fetchStreetViewImages(points);
       
-      return {
+      // Create route object with weather data if available
+      const routeObject: Route = {
         id: `route-${index}`,
         source,
         destination,
@@ -180,6 +203,20 @@ export const computeRoutes = async (
           isAnalyzing: false
         }
       };
+      
+      // Add weather information if available
+      if (weatherData) {
+        routeObject.weather = {
+          condition: getWeatherCondition(weatherData),
+          temperature: weatherData.temperature,
+          description: weatherData.description,
+          icon: weatherData.icon,
+          humidity: weatherData.humidity,
+          windSpeed: weatherData.windSpeed
+        };
+      }
+      
+      return routeObject;
     });
 
     // Start Gemini analysis for all routes asynchronously
@@ -211,6 +248,9 @@ const analyzeAllRoutes = async (routes: Route[]) => {
         isAnalyzing: true
       };
       
+      // Dispatch an event to notify that analysis has started
+      dispatchRouteAnalysisComplete(route);
+      
       // Analyze a subset of images to improve performance
       // For very long routes with many images, select a reasonable sample
       let imagesToAnalyze = route.streetViewImages;
@@ -220,8 +260,14 @@ const analyzeAllRoutes = async (routes: Route[]) => {
         imagesToAnalyze = selectEvenlySpacedSamples(route.streetViewImages, sampleCount);
       }
       
-      // Get analysis results including explanations and precautions
-      const analysisResults = await analyzeStreetViewImages(imagesToAnalyze);
+      // Include weather information in the Gemini analysis prompt if available
+      let weatherInfo = "";
+      if (route.weather) {
+        weatherInfo = `Current weather conditions: ${route.weather.condition}, ${route.weather.temperature}°C, ${route.weather.description}. Wind speed: ${route.weather.windSpeed} m/s. Humidity: ${route.weather.humidity}%.`;
+      }
+      
+      // Get analysis results including explanations and precautions, passing weather info
+      const analysisResults = await analyzeStreetViewImages(imagesToAnalyze, weatherInfo);
       const averageRiskScore = calculateAverageRiskScore(analysisResults.riskScores);
       
       // Update route with analysis results
@@ -232,6 +278,9 @@ const analyzeAllRoutes = async (routes: Route[]) => {
         averageRiskScore,
         isAnalyzing: false
       };
+      
+      // Dispatch an event to notify UI components about the completed analysis
+      dispatchRouteAnalysisComplete(route);
     }
   } catch (error) {
     console.error('Error analyzing routes with Gemini:', error);

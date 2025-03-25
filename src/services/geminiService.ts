@@ -25,7 +25,10 @@ interface ImageAnalysisResponse {
 /**
  * Analyzes a street view image and returns a risk score with explanation
  */
-export const analyzeStreetViewImage = async (imageUrl: string): Promise<ImageAnalysisResponse> => {
+export const analyzeStreetViewImage = async (
+  imageUrl: string, 
+  weatherInfo: string = ""
+): Promise<ImageAnalysisResponse> => {
   try {
     const model = genAI.getGenerativeModel({ model: modelName });
     
@@ -92,6 +95,7 @@ export const analyzeStreetViewImage = async (imageUrl: string): Promise<ImageAna
 
     const userPrompt = `
     Analyze this street view image for driving safety and road conditions, focusing on evidence-based risk factors.
+    ${weatherInfo ? `Weather context: ${weatherInfo}` : ''}
 
     Evaluate the following key safety parameters:
 
@@ -134,7 +138,7 @@ export const analyzeStreetViewImage = async (imageUrl: string): Promise<ImageAna
     - Consider cumulative effects of multiple hazards
     - Accurately identify and score significant safety issues
 
-    Calculate a TOTAL RISK SCORE by adding points across all categories, where higher points indicate higher risk.
+    Calculate a TOTAL RISK SCORE by adding pointst across all categories, where higher points indicate higher risk.
 
     Format your response exactly like this with one line for each:
     Risk Score: [number 0-100]
@@ -207,7 +211,10 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
 /**
  * Analyzes multiple street view images and returns their risk scores with explanations
  */
-export const analyzeStreetViewImages = async (imageUrls: string[]): Promise<{
+export const analyzeStreetViewImages = async (
+  imageUrls: string[],
+  weatherInfo: string = ""
+): Promise<{
   riskScores: number[];
   explanations: string[];
   precautions: string[];
@@ -223,7 +230,7 @@ export const analyzeStreetViewImages = async (imageUrls: string[]): Promise<{
   for (let i = 0; i < imageUrls.length; i += concurrencyLimit) {
     const batch = imageUrls.slice(i, i + concurrencyLimit);
     const batchResults = await Promise.all(
-      batch.map(url => analyzeStreetViewImage(url))
+      batch.map(url => analyzeStreetViewImage(url, weatherInfo))
     );
     
     batchResults.forEach(result => {
