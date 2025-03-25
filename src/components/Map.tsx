@@ -208,7 +208,7 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
           animation: window.google.maps.Animation.DROP,
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
-            fillColor: "#8b5cf6", // Purple
+            fillColor: "#22c55e", // Purple
             fillOpacity: 1,
             strokeColor: "#ffffff",
             strokeWeight: 2,
@@ -218,10 +218,10 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
         
         // Add a pulsating circle around the current location
         const circle = new window.google.maps.Circle({
-          strokeColor: "#8b5cf6",
+          strokeColor: "#22c55e",
           strokeOpacity: 0.8,
           strokeWeight: 2,
-          fillColor: "#8b5cf6",
+          fillColor: "#22c55e",
           fillOpacity: 0.2,
           map: googleMap,
           center: currentLocation.coordinates,
