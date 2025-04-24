@@ -21,6 +21,7 @@ interface MapProps {
   className?: string;
   currentLocation?: Location | null;
   selectedStreetViewLocation?: StreetViewLocation | null;
+  isNavigationMode?: boolean;
 }
 
 const Map = forwardRef<HTMLDivElement, MapProps>(({
@@ -29,7 +30,8 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
   onRouteSelect,
   className,
   currentLocation = null,
-  selectedStreetViewLocation = null
+  selectedStreetViewLocation = null,
+  isNavigationMode = false
 }, ref) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -60,19 +62,19 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
 
     try {
       // Create map centered on Mumbai (default location)
-      const map = new window.google.maps.Map(mapRef.current, {
+      const mapOptions: any = {
         center: { lat: 19.0760, lng: 72.8777 }, // Mumbai coordinates
         zoom: 13,
-        mapTypeControl: true,
-        fullscreenControl: true,
-        streetViewControl: true,
+        mapTypeControl: !isNavigationMode,
+        fullscreenControl: !isNavigationMode,
+        streetViewControl: !isNavigationMode,
         zoomControl: true,
         mapTypeId: window.google.maps.MapTypeId.ROADMAP,
         controlSize: 24,
         styles: [
           {
             "featureType": "poi",
-            "stylers": [{ "visibility": "simplified" }]
+            "stylers": [{ "visibility": isNavigationMode ? "off" : "simplified" }]
           },
           {
             "featureType": "road",
@@ -84,13 +86,24 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
             "stylers": [{ "visibility": "off" }]
           }
         ]
-      });
+      };
+      
+      // In navigation mode, add custom UI settings
+      if (isNavigationMode) {
+        mapOptions.disableDefaultUI = true;
+        mapOptions.zoomControl = true;
+        mapOptions.zoomControlOptions = {
+          position: window.google.maps.ControlPosition.RIGHT_CENTER
+        };
+      }
+
+      const map = new window.google.maps.Map(mapRef.current, mapOptions);
 
       setGoogleMap(map);
     } catch (error) {
       console.error("Error initializing Google Maps:", error);
     }
-  }, [mapLoaded]);
+  }, [mapLoaded, isNavigationMode]);
 
   // Update routes on the map
   useEffect(() => {
@@ -205,20 +218,52 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
       
       // If we have a current location, add a marker for it
       if (currentLocation) {
-        const marker = new window.google.maps.Marker({
+        const markerOptions: any = {
           position: currentLocation.coordinates,
           map: googleMap,
           title: "Your Location",
           animation: window.google.maps.Animation.DROP,
           icon: {
             path: window.google.maps.SymbolPath.CIRCLE,
-            fillColor: "#22c55e", // Purple
+            fillColor: "#22c55e", // Green
             fillOpacity: 1,
             strokeColor: "#ffffff",
             strokeWeight: 2,
             scale: 8
           }
-        });
+        };
+        
+        // Use a different marker style in navigation mode
+        if (isNavigationMode) {
+          markerOptions.icon = {
+            path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+            fillColor: "#3b82f6", // Blue
+            fillOpacity: 1,
+            strokeColor: "#ffffff",
+            strokeWeight: 2,
+            scale: 8,
+            rotation: 0 // Will be updated with heading
+          };
+          
+          // If we have direction, update the arrow rotation
+          if (window.navigator.geolocation) {
+            try {
+              window.navigator.geolocation.getCurrentPosition(
+                (position) => {
+                  if (position.coords.heading !== null && !isNaN(position.coords.heading)) {
+                    markerOptions.icon.rotation = position.coords.heading;
+                  }
+                },
+                null,
+                { enableHighAccuracy: true }
+              );
+            } catch (error) {
+              console.error("Error getting device heading:", error);
+            }
+          }
+        }
+        
+        const marker = new window.google.maps.Marker(markerOptions);
         
         // Add a pulsating circle around the current location
         const circle = new window.google.maps.Circle({
@@ -229,22 +274,30 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
           fillOpacity: 0.2,
           map: googleMap,
           center: currentLocation.coordinates,
-          radius: 50, // 50 meters
+          radius: isNavigationMode ? 30 : 50, // Smaller radius in navigation mode
           animation: window.google.maps.Animation.DROP
         });
         
         currentLocationMarkerRef.current = marker;
         
-        // If no routes are showing yet, center map on current location
-        if (routes.length === 0) {
+        // If in navigation mode or no routes are showing, center map on current location
+        if (isNavigationMode || routes.length === 0) {
           googleMap.setCenter(currentLocation.coordinates);
-          googleMap.setZoom(15);
+          googleMap.setZoom(isNavigationMode ? 17 : 15); // Higher zoom level in navigation mode
+          
+          // In navigation mode, also set up auto-follow
+          if (isNavigationMode) {
+            // Make map follow current location
+            // We already set the center above, but for continued tracking,
+            // we would need to subscribe to location updates, which is handled
+            // in the NavigationView component
+          }
         }
       }
     } catch (error) {
       console.error("Error updating current location marker:", error);
     }
-  }, [googleMap, currentLocation, routes.length]);
+  }, [googleMap, currentLocation, routes.length, isNavigationMode]);
 
   // Update selected route when it changes
   useEffect(() => {

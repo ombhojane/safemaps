@@ -5,10 +5,12 @@ import RouteList from "@/components/RouteList";
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route, StreetViewLocation } from "@/types";
 import { computeRoutes, generateNavigationUrl, ROUTE_ANALYSIS_COMPLETE_EVENT } from "@/services/mapsService";
-import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Menu, X, ChevronUp, ChevronDown, Twitter } from "lucide-react";
+import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Menu, X, ChevronUp, ChevronDown, Twitter, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
+import NavigationView from "@/components/NavigationView";
+import NavigationPreview from "@/components/NavigationPreview";
 
 const Index = () => {
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -25,6 +27,8 @@ const Index = () => {
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
   const [selectedStreetViewLocation, setSelectedStreetViewLocation] = useState<StreetViewLocation | null>(null);
   const [viewedLocationIndex, setViewedLocationIndex] = useState<number | undefined>(undefined);
+  const [isNavigating, setIsNavigating] = useState(false);
+  const [navigatingRoute, setNavigatingRoute] = useState<Route | null>(null);
 
   const handleRouteSubmit = async (source: Location, destination: Location) => {
     setIsLoading(true);
@@ -105,11 +109,19 @@ const Index = () => {
   const handleStartTrip = (route: Route) => {
     setIsStartingTrip(true);
     
-    // Slight delay to show loading state
+    // Short delay to show loading state
     setTimeout(() => {
-      window.open(generateNavigationUrl(route), '_blank');
+      // Instead of opening Google Maps in a new tab, use our custom navigation
+      setNavigatingRoute(route);
+      setIsNavigating(true);
       setIsStartingTrip(false);
     }, 500);
+  };
+
+  // Handle closing the navigation view
+  const handleCloseNavigation = () => {
+    setIsNavigating(false);
+    setNavigatingRoute(null);
   };
 
   // Get the selected route object
@@ -297,6 +309,14 @@ const Index = () => {
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col relative">
+      {/* Render Navigation View when navigating */}
+      {isNavigating && navigatingRoute && (
+        <NavigationView 
+          route={navigatingRoute} 
+          onClose={handleCloseNavigation} 
+        />
+      )}
+      
       {/* Map Background - Full Size */}
       <div className="absolute inset-0 z-0">
         <Map 
@@ -407,25 +427,6 @@ const Index = () => {
               <div key={routeDetailsKey} className="bg-card rounded-lg border p-4 shadow-sm mb-4">
                   <div className="flex justify-between items-start mb-3">
                     <h2 className="text-lg font-medium">Route Details</h2>
-                    
-                    {/* Start Trip Button */}
-                    <Button 
-                      onClick={() => handleStartTrip(selectedRoute)}
-                      className="text-sm"
-                      disabled={isStartingTrip}
-                    >
-                      {isStartingTrip ? (
-                        <>
-                          <span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5"></span>
-                          Starting...
-                        </>
-                      ) : (
-                        <>
-                          <Navigation className="h-4 w-4 mr-1.5" />
-                          Start Trip
-                        </>
-                      )}
-                    </Button>
                   </div>
                   
                 <div className="grid grid-cols-2 gap-4 mb-4">
@@ -740,24 +741,22 @@ const Index = () => {
           {/* Fixed bottom action button */}
       {selectedRoute && (
             <div className="p-4 border-t bg-background sticky bottom-0 left-0 right-0">
-          <Button 
-            onClick={() => handleStartTrip(selectedRoute)}
-                className="w-full"
-            size="lg"
-            disabled={isStartingTrip}
-          >
+          <div className="flex gap-2 mt-4">
             {isStartingTrip ? (
-              <>
-                <span className="h-5 w-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></span>
-                Starting Trip...
-              </>
+              <Button disabled className="flex-1">
+                <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                Starting Navigation...
+              </Button>
             ) : (
-              <>
-                <Navigation className="h-5 w-5 mr-2" />
-                Start Trip
-              </>
+              <Button 
+                className="w-full" 
+                onClick={() => handleStartTrip(selectedRoute)}
+              >
+                Start Navigation
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Button>
             )}
-          </Button>
+          </div>
             </div>
           )}
         </div>

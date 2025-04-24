@@ -51,6 +51,11 @@ export interface Route {
     humidity: number;
     windSpeed: number;
   };
+  // Add navigation-specific properties
+  trafficCondition?: 'light' | 'moderate' | 'heavy';
+  tollsOnRoute?: boolean;
+  alternateRouteAvailable?: boolean;
+  expectedArrivalTime?: Date;
 }
 
 export interface RiskArea {

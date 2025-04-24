@@ -497,7 +497,7 @@ const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: numbe
 };
 
 // Calculate the heading (direction) between two points in degrees
-const calculateHeading = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+export const calculateHeading = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
   const φ1 = lat1 * Math.PI / 180;
   const φ2 = lat2 * Math.PI / 180;
   const Δλ = (lng2 - lng1) * Math.PI / 180;
