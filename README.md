@@ -1,132 +1,139 @@
-# SafeMaps Application
+# SafeMaps
 
-A React application that helps users find safe routes between locations.
+SafeMaps helps users find safe routes between locations by analyzing road conditions, traffic patterns, and environmental factors.
 
 ## Features
 
-- Google Places Autocomplete for location search
-- Safe route planning and analysis
-- Interactive maps with risk visualization
+- **Safety Analysis**: Uses AI to analyze street view images and identify potential hazards
+- **Route Comparison**: View multiple route options with safety scores
+- **Turn-by-Turn Navigation**: Get directions with safety alerts for risky areas
+- **Street View Preview**: See what your route looks like before traveling
+- **Weather Integration**: Check weather conditions along your route
+- **Emergency Contacts**: Quick access to nearby emergency services
 
-## Getting Started
+## Description
+
+SafeMaps analyzes various risk factors to recommend the safest travel routes:
+
+- **Road Infrastructure**: Analyzes road design, lane width, dividers/barriers, and shoulder conditions
+- **Traffic Conditions**: Evaluates congestion, merging zones, vehicle mix, and traffic patterns
+- **Environmental Factors**: Considers weather conditions, lighting, visibility, and road surface
+- **Human Factors**: Accounts for pedestrian zones, construction areas, and other unpredictable elements
+- **Infrastructure Quality**: Assesses road surface, street lighting, and traffic signage
+
+## Architecture
+
+- **Frontend**: Built with React, TypeScript, and Vite for a fast, responsive user interface
+- **UI Components**: Utilizes shadcn-ui and Tailwind CSS for modern, accessible design
+- **Mapping Services**: Integrates Google Maps for routing, Places API for location search, and Street View
+- **AI Integration**: Leverages Google's Gemini LLMs for image analysis and safety assessment
+- OpenWeatherMap for weather data
+
+## Setup
 
 ### Prerequisites
 
 - Node.js (v14.0.0 or later)
 - npm or yarn
-- Google Places API key
+- Google Cloud API key (Maps SDK, Places API)
+- Google Gemini API key
 
-### Installation
+### Installation Steps
 
-1. Clone the repository
+1. **Clone the repository**
    ```bash
    git clone https://github.com/yourusername/safemaps.git
    cd safemaps
    ```
 
-2. Install dependencies
+2. **Install dependencies**
    ```bash
    npm install
    # or
    yarn
    ```
 
-3. Set up environment variables
+3. **Set up environment variables**
    
    Create a `.env` file in the root directory with the following content:
    ```
-   VITE_GOOGLE_MAPS_API_KEY=your_google_places_api_key
+   VITE_GOOGLE_MAPS_API_KEY=your_google_cloud_api_key
+   VITE_GEMINI_API_KEY=your_gemini_api_key
    ```
-   
-   You can obtain a Google Places API key from the [Google Cloud Console](https://console.cloud.google.com/). Make sure to enable the Places API for your project.
 
-4. Start the development server
+4. **Start the development server**
    ```bash
    npm run dev
    # or
    yarn dev
    ```
 
-### Google Places API Setup
+### API Key Setup
+
+#### Google Maps API
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select an existing one
 3. Navigate to APIs & Services > Library
-4. Search for and enable the "Places API"
+4. Enable the following APIs:
+   - Places API
+   - Maps JavaScript API
+   - Directions API
+   - Street View API
 5. Go to APIs & Services > Credentials
-6. Create an API key and restrict it to the Places API for security
-7. Copy the API key to your `.env` file
+6. Create an API key and add appropriate restrictions
 
-## Usage
+#### Google Gemini API
 
-1. Enter your starting point and destination in the search form
-2. The application will provide route options with safety analysis
-3. Select a route to view detailed safety information and proceed with navigation
+1. Visit the [Gemini API page](https://ai.google.dev/)
+2. Sign up and obtain your API key
+3. Copy the key to your `.env` file
 
-## Project info
+## 🚗 Usage Guide
 
-**URL**: https://lovable.dev/projects/90e3a997-6998-458e-88fe-4b75cff8009a
+1. **Start a route search**
+   - Enter your destination in the search bar
+   - Use your current location or enter a starting point
 
-## How can I edit this code?
+2. **Compare route options**
+   - Review multiple routes with safety scores, estimated time, and distance
+   - Select a route to view detailed safety information
+   - Check the Street View gallery to preview your journey
 
-There are several ways of editing your application.
+3. **Start navigation**
+   - Select "Navigate" on your chosen route
+   - Follow the turn-by-turn directions with voice guidance
+   - Receive safety alerts for upcoming risk areas
 
-**Use Lovable**
+4. **Customize your experience**
+   - Adjust voice guidance volume or mute as needed
+   - Access emergency contacts when required
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/90e3a997-6998-458e-88fe-4b75cff8009a) and start prompting.
+## Contributing
 
-Changes made via Lovable will be committed automatically to this repo.
+We welcome contributions to SafeMaps:
 
-**Use your preferred IDE**
+1. Fork the repository
+2. Create a new branch
+3. Make your changes
+4. Submit a pull request
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+## Upcoming Plans
 
-Follow these steps:
+- **Suggessions from Crowdsourcing**: Allow users to report unsafe conditions in real-time, respond to safer routes & give suggessions
+- **Personalized Safety Profiles**: Customize safety parameters based on user preferences
+- Enhnace the User Experience for Navigation
+  
+## License
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## Acknowledgements
 
-# Step 3: Install the necessary dependencies.
-npm i
+- Google Maps SDK, Places, and Gemini AI for core services
+- React and Vite communities for the excellent development tools
+- shadcn-ui for the beautiful UI components
+- OpenWeatherMap for weather data integration
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
 
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with .
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/90e3a997-6998-458e-88fe-4b75cff8009a) and click on Share -> Publish.
-
-## I want to use a custom domain - is that possible?
-
-We don't support custom domains (yet). If you want to deploy your project under your own domain then we recommend using Netlify. Visit our docs for more details: [Custom domains](https://docs.lovable.dev/tips-tricks/custom-domain/)
