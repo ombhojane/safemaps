@@ -11,7 +11,8 @@ import {
   ChevronUp, 
   ChevronDown, 
   Clock,
-  Timer
+  Timer,
+  MapPin
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Route } from "@/types";
@@ -24,8 +25,10 @@ import {
   startNavigation, 
   stopNavigation,
   subscribeToNavigation,
-  toggleVoiceGuidance
+  toggleVoiceGuidance,
+  requestLocationPermission
 } from "@/services/navigationService";
+import { toast } from "sonner";
 
 interface NavigationViewProps {
   route: Route;
@@ -37,12 +40,47 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isBottomSheetExpanded, setIsBottomSheetExpanded] = useState(false);
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   
-  // Start navigation when component mounts
+  // Request location permission and start navigation
   useEffect(() => {
-    const initialState = startNavigation(route);
-    setNavigationState(initialState);
+    const initializeNavigation = async () => {
+      setIsRequestingLocation(true);
+      
+      // Request location permission first
+      const hasPermission = await requestLocationPermission();
+      
+      if (hasPermission) {
+        // Start navigation if permission granted
+        const initialState = startNavigation(route);
+        setNavigationState(initialState);
+        
+        // Show success toast
+        toast.success("Navigation started");
+      } else {
+        // Show error if permission denied
+        toast.error("Location access denied. Please enable location services to navigate.");
+        setNavigationState({
+          status: NavigationStatus.ERROR,
+          currentRoute: route,
+          currentPosition: null,
+          currentStep: null,
+          nextStep: null,
+          distanceToNextTurn: 0,
+          distanceToDestination: 0,
+          estimatedArrivalTime: null,
+          remainingDuration: 0,
+          isOffRoute: false,
+          navigationProgress: 0,
+          lastReroute: null
+        });
+      }
+      
+      setIsRequestingLocation(false);
+    };
+    
+    initializeNavigation();
     
     // Subscribe to navigation state updates
     const unsubscribe = subscribeToNavigation((newState) => {
@@ -55,6 +93,23 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
       stopNavigation();
     };
   }, [route]);
+  
+  // Handle manually requesting location if initial attempt failed
+  const handleRequestLocation = async () => {
+    setIsRequestingLocation(true);
+    
+    const hasPermission = await requestLocationPermission();
+    
+    if (hasPermission) {
+      const initialState = startNavigation(route);
+      setNavigationState(initialState);
+      toast.success("Location access granted");
+    } else {
+      toast.error("Location access denied. Please enable location in your browser settings.");
+    }
+    
+    setIsRequestingLocation(false);
+  };
   
   // Handle voice mute toggle
   const handleVoiceToggle = () => {
@@ -269,7 +324,11 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
               {/* Street name */}
               <div className="bg-muted/50 rounded-lg py-2 px-3">
                 <p className="text-sm font-medium">
-                  {navigationState.currentStep.streetName || "Unknown Road"}
+                  {navigationState.currentStep.streetName !== "Unknown Road" 
+                    ? navigationState.currentStep.streetName 
+                    : navigationState.currentRoute?.destination?.name 
+                      ? `Heading toward ${navigationState.currentRoute.destination.name}`
+                      : "Navigating..."}
                 </p>
               </div>
             </div>
@@ -289,11 +348,16 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
                 <p className="text-sm font-medium">
                   {navigationState.nextStep.instruction}
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  {navigationState.nextStep.streetName !== "Unknown Road" 
+                    ? navigationState.nextStep.streetName 
+                    : "Continue on route"}
+                </p>
               </div>
               
               <div className="text-right">
                 <p className="text-sm font-medium">
-                  {formatDistance(navigationState.distanceToNextTurn)}
+                  {formatDistance(navigationState.nextStep.distance)}
                 </p>
               </div>
             </div>
@@ -369,9 +433,9 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
             </div>
           )}
           
-          {/* Error State */}
+          {/* Error State with Location Request Button */}
           {navigationState?.status === NavigationStatus.ERROR && (
-            <div className="flex flex-col items-center justify-center py-10">
+            <div className="flex flex-col items-center justify-center py-10 absolute inset-0 bg-background/80 backdrop-blur-sm z-30">
               <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mb-4">
                 <div className="w-10 h-10 text-red-600">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
@@ -379,16 +443,36 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
                   </svg>
                 </div>
               </div>
-              <h2 className="text-2xl font-bold mb-2">Navigation Error</h2>
+              <h2 className="text-2xl font-bold mb-2">Location Required</h2>
               <p className="text-muted-foreground text-center max-w-xs mb-6">
-                We couldn't determine your current location. Please check your GPS settings and try again.
+                We couldn't determine your current location. Navigation requires access to your location.
               </p>
-              <Button
-                className="w-full"
-                onClick={onClose}
-              >
-                End Navigation
-              </Button>
+              <div className="space-y-3 w-full max-w-xs">
+                <Button
+                  className="w-full"
+                  onClick={handleRequestLocation}
+                  disabled={isRequestingLocation}
+                >
+                  {isRequestingLocation ? (
+                    <>
+                      <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Requesting Location...
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="h-4 w-4 mr-2" />
+                      Enable Location
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={onClose}
+                >
+                  Cancel Navigation
+                </Button>
+              </div>
             </div>
           )}
         </div>

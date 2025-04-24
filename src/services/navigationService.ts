@@ -256,18 +256,46 @@ const processRouteForNavigation = (route: Route): NavigationStep[] => {
   // to detect turns, intersections, etc. Here we'll create simplified
   // steps based on significant heading changes
   
-  let currentStreetName = "Unknown Road";
-  let currentIndex = 0;
+  // First check if we have source and destination names
+  const sourceName = route.source?.name ? route.source.name : "Starting Point";
+  const destName = route.destination?.name ? route.destination.name : "Destination";
   
-  // Try to get the first street name if available
-  if (route.streetViewLocations && route.streetViewLocations.length > 0 && route.streetViewLocations[0].streetName) {
-    currentStreetName = route.streetViewLocations[0].streetName;
+  // Extract street names from locations when available
+  const streetViewLocations = route.streetViewLocations || [];
+  const streetNames = new Map<string, string>();
+  
+  // Pre-process street view locations to build a map of nearby street names
+  if (streetViewLocations.length > 0) {
+    streetViewLocations.forEach(loc => {
+      if (loc.streetName) {
+        // Round coordinates to 4 decimal places to create areas
+        const key = `${loc.coordinates.lat.toFixed(4)},${loc.coordinates.lng.toFixed(4)}`;
+        streetNames.set(key, loc.streetName);
+      }
+    });
   }
+
+  // Try to get the current street name from source location or nearby points
+  let currentStreetName = "Unknown Road";
+  
+  // Try to extract street name from source address
+  const sourceAddressParts = sourceName.split(',');
+  if (sourceAddressParts.length > 0) {
+    // First part is likely the street name
+    currentStreetName = sourceAddressParts[0].trim();
+  }
+  
+  // If we have street view locations, try to get a better name
+  if (streetViewLocations.length > 0 && streetViewLocations[0].streetName) {
+    currentStreetName = streetViewLocations[0].streetName;
+  }
+  
+  let currentIndex = 0;
   
   // Add an initial step to start
   steps.push({
     index: currentIndex++,
-    instruction: `Start on ${currentStreetName}`,
+    instruction: `Head ${currentStreetName !== "Unknown Road" ? `on ${currentStreetName}` : `toward ${destName}`}`,
     maneuver: NavigationManeuver.STRAIGHT,
     distance: 0,
     duration: 0,
@@ -315,6 +343,24 @@ const processRouteForNavigation = (route: Route): NavigationStep[] => {
       // Determine the type of maneuver based on heading change
       const maneuver = determineManeuver(headingDiff, lastHeading, heading);
       
+      // Look for street name near this turning point
+      if (streetViewLocations.length > 0) {
+        const nearbyLocation = findNearestStreetViewLocation(
+          prevPoint.coordinates.lat, prevPoint.coordinates.lng,
+          streetViewLocations
+        );
+        
+        if (nearbyLocation && nearbyLocation.streetName) {
+          currentStreetName = nearbyLocation.streetName;
+        } else {
+          // Try to find a street name using rounded coordinates
+          const roundedKey = `${prevPoint.coordinates.lat.toFixed(4)},${prevPoint.coordinates.lng.toFixed(4)}`;
+          if (streetNames.has(roundedKey)) {
+            currentStreetName = streetNames.get(roundedKey) || currentStreetName;
+          }
+        }
+      }
+      
       // Create a step for this segment
       steps.push({
         index: currentIndex++,
@@ -333,31 +379,27 @@ const processRouteForNavigation = (route: Route): NavigationStep[] => {
       currentSegmentStart = i - 1;
       segmentDistance = pointDistance;
       lastHeading = heading;
-      
-      // Look for street name near this turning point
-      if (route.streetViewLocations) {
-        const nearbyLocation = findNearestStreetViewLocation(
-          prevPoint.coordinates.lat, prevPoint.coordinates.lng,
-          route.streetViewLocations
-        );
-        
-        if (nearbyLocation && nearbyLocation.streetName) {
-          currentStreetName = nearbyLocation.streetName;
-        }
-      }
     }
+  }
+  
+  // Check if destination name can be used for final street name
+  let finalStreetName = currentStreetName;
+  const destAddressParts = destName.split(',');
+  if (destAddressParts.length > 0) {
+    // First part might be the street name
+    finalStreetName = destAddressParts[0].trim();
   }
   
   // Add final arrival step
   steps.push({
     index: currentIndex,
-    instruction: "You have arrived at your destination",
+    instruction: `Arrive at ${destName}`,
     maneuver: NavigationManeuver.ARRIVE,
     distance: 0,
     duration: 0,
     startPoint: points[points.length - 1],
     endPoint: points[points.length - 1],
-    streetName: currentStreetName,
+    streetName: finalStreetName,
     isRoundabout: false,
     drivingSide: 'RIGHT'
   });
@@ -365,21 +407,79 @@ const processRouteForNavigation = (route: Route): NavigationStep[] => {
   return steps;
 };
 
+// Request location permission explicitly
+export const requestLocationPermission = (): Promise<boolean> => {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      console.error("Geolocation not supported by this browser");
+      resolve(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      () => {
+        // Permission granted
+        resolve(true);
+      },
+      (error) => {
+        console.error("Geolocation permission error:", error);
+        // Permission denied or error
+        resolve(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  });
+};
+
 // Start tracking user position
 const startPositionTracking = (): void => {
   if (navigator.geolocation) {
-    watchPositionId = navigator.geolocation.watchPosition(
-      handlePositionUpdate,
+    // First try to get current position to check permissions
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        // Initial position update
+        handlePositionUpdate(position);
+        
+        // Then start watching position for continuous updates
+        watchPositionId = navigator.geolocation.watchPosition(
+          handlePositionUpdate,
+          (error) => {
+            console.error("Geolocation error:", error);
+            
+            if (error.code === error.PERMISSION_DENIED) {
+              // Location permission denied
+              navigationState.status = NavigationStatus.ERROR;
+              speakInstruction("Location access denied. Please enable location services to continue navigation.");
+            } else if (error.code === error.POSITION_UNAVAILABLE) {
+              // Position unavailable
+              navigationState.status = NavigationStatus.ERROR;
+              speakInstruction("Unable to determine your location. Please ensure you have a clear GPS signal.");
+            } else if (error.code === error.TIMEOUT) {
+              // Timeout
+              navigationState.status = NavigationStatus.ERROR;
+              speakInstruction("Location request timed out. Please try again.");
+            }
+            
+            notifyWatchers();
+          },
+          {
+            enableHighAccuracy: true,
+            maximumAge: 1000,
+            timeout: 20000
+          }
+        );
+      },
       (error) => {
-        console.error("Geolocation error:", error);
+        console.error("Initial position error:", error);
         navigationState.status = NavigationStatus.ERROR;
+        
+        if (error.code === error.PERMISSION_DENIED) {
+          speakInstruction("Location access denied. Please enable location services to continue navigation.");
+        }
+        
         notifyWatchers();
       },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 20000
-      }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   } else {
     console.error("Geolocation not supported by this browser");
