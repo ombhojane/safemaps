@@ -31,8 +31,9 @@ export interface Route {
   riskAreas: RiskArea[];
   // Add path property for visualization
   path?: string;
-  // Add street view images
+  // Add street view images with their locations
   streetViewImages?: string[];
+  streetViewLocations?: StreetViewLocation[];
   // Add Gemini analysis results
   geminiAnalysis?: {
     riskScores: number[];
@@ -104,4 +105,15 @@ declare global {
       maps: any;
     };
   }
+}
+
+// Add a type for street view locations with additional metadata
+export interface StreetViewLocation {
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
+  heading: number;
+  index: number;
+  streetName?: string;
 }

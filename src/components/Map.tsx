@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, forwardRef } from "react";
-import { Route, Location } from "@/types";
+import { Route, Location, StreetViewLocation } from "@/types";
 import { loadGoogleMapsApi, decodePolyline } from "@/services/mapsService";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,7 @@ interface MapProps {
   onRouteSelect?: (routeId: string) => void;
   className?: string;
   currentLocation?: Location | null;
+  selectedStreetViewLocation?: StreetViewLocation | null;
 }
 
 const Map = forwardRef<HTMLDivElement, MapProps>(({
@@ -27,7 +28,8 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
   selectedRouteId,
   onRouteSelect,
   className,
-  currentLocation = null
+  currentLocation = null,
+  selectedStreetViewLocation = null
 }, ref) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -35,6 +37,8 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
   const routePolylinesRef = useRef<any[]>([]);
   const markersRef = useRef<any[]>([]);
   const currentLocationMarkerRef = useRef<any>(null);
+  const streetViewMarkerRef = useRef<any>(null);
+  const streetViewInfoWindowRef = useRef<any>(null);
 
   // Load Google Maps API
   useEffect(() => {
@@ -263,6 +267,137 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
       console.error("Error updating selected route:", error);
     }
   }, [googleMap, routes, selectedRouteId]);
+
+  // Add a new effect to handle the selected street view location
+  useEffect(() => {
+    if (!googleMap || !window.google) return;
+    
+    try {
+      console.log("Street view location effect triggered:", selectedStreetViewLocation);
+      
+      // Clear existing street view marker and info window
+      if (streetViewMarkerRef.current) {
+        streetViewMarkerRef.current.setMap(null);
+        streetViewMarkerRef.current = null;
+      }
+      
+      if (streetViewInfoWindowRef.current) {
+        streetViewInfoWindowRef.current.close();
+        streetViewInfoWindowRef.current = null;
+      }
+      
+      // If we have a selected street view location, show it on the map
+      if (selectedStreetViewLocation) {
+        console.log("Showing street view location on map:", selectedStreetViewLocation);
+        
+        // Create a distinctive, larger custom SVG marker
+        const svgMarker = {
+          path: "M 0,0 C -2,-20 -10,-22 -10,-30 A 10,10 0 1,1 10,-30 C 10,-22 2,-20 0,0 z",
+          fillColor: '#7e22ce',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: 2,
+          scale: 1.5,
+          labelOrigin: new window.google.maps.Point(0, -30)
+        };
+        
+        // Explicitly set center and zoom
+        googleMap.setCenter(selectedStreetViewLocation.coordinates);
+        googleMap.setZoom(19); // Zoom in very close for better visibility
+        
+        // Create a marker at the street view location
+        const marker = new window.google.maps.Marker({
+          position: selectedStreetViewLocation.coordinates,
+          map: googleMap,
+          animation: window.google.maps.Animation.BOUNCE,
+          icon: svgMarker,
+          label: {
+            text: `${selectedStreetViewLocation.index + 1}`,
+            color: 'white',
+            fontSize: '14px',
+            fontWeight: 'bold'
+          },
+          zIndex: 1000
+        });
+        
+        // Create an info window with the street name
+        const infoContent = document.createElement('div');
+        infoContent.className = 'p-4 max-w-xs';
+        infoContent.innerHTML = `
+          <div class="font-bold text-base text-purple-700 mb-2">${
+            selectedStreetViewLocation.streetName || 'Street View Location'
+          }</div>
+          <div class="text-sm font-medium">Location #${selectedStreetViewLocation.index + 1}</div>
+          <div class="text-xs text-muted-foreground mt-2">
+            Heading: ${Math.round(selectedStreetViewLocation.heading)}°<br>
+            Coordinates: ${selectedStreetViewLocation.coordinates.lat.toFixed(5)}, 
+            ${selectedStreetViewLocation.coordinates.lng.toFixed(5)}
+          </div>
+        `;
+        
+        const infoWindow = new window.google.maps.InfoWindow({
+          content: infoContent,
+          pixelOffset: new window.google.maps.Size(0, -15)
+        });
+        
+        // Open the info window immediately
+        infoWindow.open(googleMap, marker);
+        
+        // Add directional indicator (arrow showing view direction)
+        const headingRadians = selectedStreetViewLocation.heading * Math.PI / 180;
+        const arrowLength = 40; // meters
+        const endLat = selectedStreetViewLocation.coordinates.lat + 
+                       Math.cos(headingRadians) * arrowLength * 0.000009;
+        const endLng = selectedStreetViewLocation.coordinates.lng + 
+                       Math.sin(headingRadians) * arrowLength * 0.000009 / 
+                       Math.cos(selectedStreetViewLocation.coordinates.lat * Math.PI / 180);
+        
+        const viewLine = new window.google.maps.Polyline({
+          path: [
+            selectedStreetViewLocation.coordinates,
+            { lat: endLat, lng: endLng }
+          ],
+          geodesic: true,
+          strokeColor: '#7e22ce',
+          strokeOpacity: 1.0,
+          strokeWeight: 4,
+          icons: [{
+            icon: { path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW },
+            offset: '100%',
+            repeat: '0px'
+          }],
+          map: googleMap,
+          zIndex: 900
+        });
+        
+        // Add highlighted area around marker
+        const circle = new window.google.maps.Circle({
+          strokeColor: "#7e22ce",
+          strokeOpacity: 0.8,
+          strokeWeight: 2,
+          fillColor: "#7e22ce",
+          fillOpacity: 0.2,
+          map: googleMap,
+          center: selectedStreetViewLocation.coordinates,
+          radius: 25,
+          zIndex: 800
+        });
+        
+        // Store references for cleanup
+        streetViewMarkerRef.current = marker;
+        streetViewInfoWindowRef.current = infoWindow;
+        
+        // Stop bounce after 3 seconds but keep marker
+        setTimeout(() => {
+          if (streetViewMarkerRef.current) {
+            streetViewMarkerRef.current.setAnimation(null);
+          }
+        }, 3000);
+      }
+    } catch (error) {
+      console.error("Error updating street view marker:", error);
+    }
+  }, [googleMap, selectedStreetViewLocation]);
 
   // Helper function to get color based on risk score
   const getRiskColor = (riskScore: number, isSelected: boolean): string => {

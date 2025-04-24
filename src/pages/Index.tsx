@@ -3,7 +3,7 @@ import Map from "@/components/Map";
 import RouteForm from "@/components/RouteForm";
 import RouteList from "@/components/RouteList";
 import StreetViewGallery from "@/components/StreetViewGallery";
-import { Location, Route } from "@/types";
+import { Location, Route, StreetViewLocation } from "@/types";
 import { computeRoutes, generateNavigationUrl, ROUTE_ANALYSIS_COMPLETE_EVENT } from "@/services/mapsService";
 import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Menu, X, ChevronUp, ChevronDown, Twitter } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,8 @@ const Index = () => {
   const sheetHeightRef = useRef<number>(0);
   const [showInputs, setShowInputs] = useState(true);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
+  const [selectedStreetViewLocation, setSelectedStreetViewLocation] = useState<StreetViewLocation | null>(null);
+  const [viewedLocationIndex, setViewedLocationIndex] = useState<number | undefined>(undefined);
 
   const handleRouteSubmit = async (source: Location, destination: Location) => {
     setIsLoading(true);
@@ -239,6 +241,60 @@ const Index = () => {
     };
   }, []);
 
+  // Find the index of the selected location in the current route's locations
+  useEffect(() => {
+    if (selectedStreetViewLocation && selectedRoute && selectedRoute.streetViewLocations) {
+      // Log for debugging
+      console.log("Selected location:", selectedStreetViewLocation);
+      console.log("Available locations:", selectedRoute.streetViewLocations);
+      
+      // Find by exact comparison of coordinates (more reliable than index)
+      const index = selectedRoute.streetViewLocations.findIndex(
+        loc => 
+          Math.abs(loc.coordinates.lat - selectedStreetViewLocation.coordinates.lat) < 0.0000001 &&
+          Math.abs(loc.coordinates.lng - selectedStreetViewLocation.coordinates.lng) < 0.0000001
+      );
+      
+      if (index !== -1) {
+        console.log("Found matching location at index:", index);
+        setViewedLocationIndex(index);
+      } else {
+        console.log("No matching location found");
+        // If exact match fails, try matching by index
+        if (selectedStreetViewLocation.index !== undefined && 
+            selectedStreetViewLocation.index < selectedRoute.streetViewLocations.length) {
+          setViewedLocationIndex(selectedStreetViewLocation.index);
+        }
+      }
+    } else {
+      setViewedLocationIndex(undefined);
+    }
+  }, [selectedStreetViewLocation, selectedRoute]);
+
+  // Handle street view image click
+  const handleStreetViewImageClick = (location: StreetViewLocation) => {
+    // Force reset any existing marker first
+    setSelectedStreetViewLocation(null);
+    
+    // Small delay to ensure cleanup before setting new marker
+    setTimeout(() => {
+      console.log("Street view image clicked:", location);
+      setSelectedStreetViewLocation(location);
+      setViewedLocationIndex(location.index);
+      
+      // On mobile, collapse the bottom sheet when viewing an image on map
+      if (window.innerWidth < 1024) {
+        setBottomSheetState('peek');
+      }
+    }, 50);
+  };
+
+  // Clear selected location when route changes
+  useEffect(() => {
+    setSelectedStreetViewLocation(null);
+    setViewedLocationIndex(undefined);
+  }, [selectedRouteId]);
+
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col relative">
       {/* Map Background - Full Size */}
@@ -249,6 +305,7 @@ const Index = () => {
           onRouteSelect={handleRouteSelect}
           className="h-full w-full"
           currentLocation={currentLocation}
+          selectedStreetViewLocation={selectedStreetViewLocation}
         />
       </div>
       
@@ -487,6 +544,9 @@ const Index = () => {
                       onAnalysisComplete={(riskScores, averageRiskScore, explanations, precautions) => 
                         handleAnalysisComplete(selectedRoute.id, riskScores, averageRiskScore, explanations, precautions)
                       }
+                      locations={selectedRoute.streetViewLocations}
+                      onImageClick={handleStreetViewImageClick}
+                      currentlyViewedLocationIndex={viewedLocationIndex}
                     />
                   </TabsContent>
                 </Tabs>
@@ -500,8 +560,11 @@ const Index = () => {
       {routes.length > 0 && (
         <div 
           ref={bottomSheetRef}
-          className="fixed left-0 right-0 bottom-0 z-30 lg:hidden bg-background rounded-t-xl shadow-lg overflow-hidden transition-height duration-300 ease-in-out"
-          style={{ height: '140px' }}
+          className={cn(
+            "fixed left-0 right-0 bottom-0 z-30 lg:hidden bg-background rounded-t-xl shadow-lg overflow-hidden transition-height duration-300 ease-in-out",
+            "h-[140px]",
+            "flex flex-col"
+          )}
         >
           {/* Drag handle */}
           <div 
@@ -663,6 +726,9 @@ const Index = () => {
                         onAnalysisComplete={(riskScores, averageRiskScore, explanations, precautions) => 
                           handleAnalysisComplete(selectedRoute.id, riskScores, averageRiskScore, explanations, precautions)
                         }
+                        locations={selectedRoute.streetViewLocations}
+                        onImageClick={handleStreetViewImageClick}
+                        currentlyViewedLocationIndex={viewedLocationIndex}
                       />
                     </TabsContent>
                   </Tabs>

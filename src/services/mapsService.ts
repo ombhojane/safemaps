@@ -182,7 +182,7 @@ export const computeRoutes = async (
       const riskScore = calculateRouteRiskScore(routePoints);
       
       // Generate street view images for the route
-      const streetViewImages = fetchStreetViewImages(points);
+      const { images: streetViewImages, locations: streetViewLocations } = fetchStreetViewImages(points);
       
       // Create route object with weather data if available
       const routeObject: Route = {
@@ -196,6 +196,7 @@ export const computeRoutes = async (
         riskAreas: [], // Would be populated with real data
         path: generateSVGPath(points), // Create an SVG path for visualization
         streetViewImages,
+        streetViewLocations,
         // Initialize Gemini analysis with isAnalyzing: true
         geminiAnalysis: {
           riskScores: [],
@@ -251,14 +252,9 @@ const analyzeAllRoutes = async (routes: Route[]) => {
       // Dispatch an event to notify that analysis has started
       dispatchRouteAnalysisComplete(route);
       
-      // Analyze a subset of images to improve performance
-      // For very long routes with many images, select a reasonable sample
-      let imagesToAnalyze = route.streetViewImages;
-      if (route.streetViewImages.length > 10) {
-        // For long routes, use evenly spaced samples
-        const sampleCount = 10;
-        imagesToAnalyze = selectEvenlySpacedSamples(route.streetViewImages, sampleCount);
-      }
+      // Use all street view images since they're now already optimally sampled
+      // We're already using the evenly distributed sampling in fetchStreetViewImages
+      const imagesToAnalyze = route.streetViewImages;
       
       // Include weather information in the Gemini analysis prompt if available
       let weatherInfo = "";
@@ -289,6 +285,14 @@ const analyzeAllRoutes = async (routes: Route[]) => {
 
 /**
  * Select evenly spaced samples from an array
+ * 
+ * This function is crucial for route analysis as it ensures we analyze
+ * points that are evenly distributed across the entire route length,
+ * rather than being concentrated at the beginning of the route.
+ * 
+ * @param array The array to sample from
+ * @param sampleCount The number of samples to take
+ * @returns An array of evenly spaced samples
  */
 const selectEvenlySpacedSamples = <T>(array: T[], sampleCount: number): T[] => {
   if (array.length <= sampleCount) return array;
@@ -365,76 +369,58 @@ const formatDuration = (seconds: number): string => {
 };
 
 // Function to fetch Street View images along a route
-export const fetchStreetViewImages = (points: { lat: number; lng: number }[], interval = 300): string[] => {
+export const fetchStreetViewImages = (
+  points: { lat: number; lng: number }[], 
+  interval = 300
+): { images: string[], locations: import('@/types').StreetViewLocation[] } => {
   // Skip if no points or only one point
-  if (!points || points.length < 2) return [];
+  if (!points || points.length < 2) return { images: [], locations: [] };
+  
+  const MAX_IMAGES = 10; // Limit number of images for performance (adjusted from 20 to 10)
+  
+  // For routes with many points, use evenly spaced samples
+  // This ensures we cover the entire route, not just the first kilometer
+  const samplePoints = selectEvenlySpacedSamples(points, MAX_IMAGES - 1); // Reserve one spot for destination
   
   const streetViewImages: string[] = [];
-  const MAX_IMAGES = 20; // Limit the number of images to avoid performance issues
+  const streetViewLocations: import('@/types').StreetViewLocation[] = [];
   
-  // Calculate total distance of the route
-  let totalDistance = 0;
-  let segmentDistances: number[] = [];
-  
-  for (let i = 0; i < points.length - 1; i++) {
-    const distance = calculateDistance(
-      points[i].lat, points[i].lng,
-      points[i + 1].lat, points[i + 1].lng
-    );
-    segmentDistances.push(distance);
-    totalDistance += distance;
-  }
-  
-  // Adjust interval based on route length to stay within MAX_IMAGES
-  const adjustedInterval = Math.max(interval, totalDistance / (MAX_IMAGES - 1));
-  
-  // Sample points at regular intervals
-  let accumulatedDistance = 0;
-  let nextSampleDistance = 0;
-  let currentSegment = 0;
-  let segmentStartDistance = 0;
-  
-  while (nextSampleDistance < totalDistance && 
-         currentSegment < segmentDistances.length && 
-         streetViewImages.length < MAX_IMAGES - 1) { // Reserve one image for destination
-    // Find the segment where the next sample point falls
-    while (currentSegment < segmentDistances.length && 
-           segmentStartDistance + segmentDistances[currentSegment] < nextSampleDistance) {
-      segmentStartDistance += segmentDistances[currentSegment];
-      currentSegment++;
-    }
+  // Generate street view images for each sample point
+  for (let i = 0; i < samplePoints.length; i++) {
+    const currentPoint = samplePoints[i];
     
-    if (currentSegment >= segmentDistances.length) break;
-    
-    // Calculate the interpolation factor within the current segment
-    const segmentDistance = segmentDistances[currentSegment];
-    const distanceIntoSegment = nextSampleDistance - segmentStartDistance;
-    const ratio = segmentDistance > 0 ? distanceIntoSegment / segmentDistance : 0;
-    
-    // Interpolate to find the coordinates
-    const startPoint = points[currentSegment];
-    const endPoint = points[currentSegment + 1];
-    
-    const lat = startPoint.lat + ratio * (endPoint.lat - startPoint.lat);
-    const lng = startPoint.lng + ratio * (endPoint.lng - startPoint.lng);
+    // Find the next point to calculate heading
+    // For the last sample, we'll use the destination
+    const nextPointIndex = i < samplePoints.length - 1 ? i + 1 : points.length - 1;
+    const nextPoint = i < samplePoints.length - 1 ? samplePoints[nextPointIndex] : points[points.length - 1];
     
     // Calculate heading (direction)
     const heading = calculateHeading(
-      startPoint.lat, startPoint.lng,
-      endPoint.lat, endPoint.lng
+      currentPoint.lat, currentPoint.lng,
+      nextPoint.lat, nextPoint.lng
     );
     
     // Create Street View image URL
-    const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x300&location=${lat},${lng}&fov=90&heading=${heading}&pitch=0&key=${API_KEY}`;
+    const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x300&location=${currentPoint.lat},${currentPoint.lng}&fov=90&heading=${heading}&pitch=0&key=${API_KEY}`;
     streetViewImages.push(streetViewUrl);
     
-    // Move to next sampling point
-    nextSampleDistance += adjustedInterval;
+    // Store the location information - ensure we're storing plain values, not references
+    streetViewLocations.push({
+      coordinates: { 
+        lat: Number(currentPoint.lat), 
+        lng: Number(currentPoint.lng) 
+      },
+      heading: Number(heading),
+      index: i
+    });
   }
   
-  // Add destination point
-  if (points.length > 1) {
-    const lastPoint = points[points.length - 1];
+  // Add destination point if not already included
+  const lastSamplePoint = samplePoints[samplePoints.length - 1];
+  const lastPoint = points[points.length - 1];
+  
+  // Check if last sample point is different from destination
+  if (lastSamplePoint.lat !== lastPoint.lat || lastSamplePoint.lng !== lastPoint.lng) {
     const secondLastPoint = points[points.length - 2];
     const heading = calculateHeading(
       secondLastPoint.lat, secondLastPoint.lng,
@@ -443,9 +429,55 @@ export const fetchStreetViewImages = (points: { lat: number; lng: number }[], in
     
     const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=400x300&location=${lastPoint.lat},${lastPoint.lng}&fov=90&heading=${heading}&pitch=0&key=${API_KEY}`;
     streetViewImages.push(streetViewUrl);
+    
+    // Store the destination location information with explicit number conversion
+    streetViewLocations.push({
+      coordinates: { 
+        lat: Number(lastPoint.lat), 
+        lng: Number(lastPoint.lng) 
+      },
+      heading: Number(heading),
+      index: streetViewLocations.length
+    });
   }
   
-  return streetViewImages;
+  // Attempt to get street names for each location (if running in browser)
+  if (typeof window !== 'undefined' && window.google && window.google.maps) {
+    // Use setTimeout to delay this process slightly so it doesn't block rendering
+    setTimeout(() => {
+      try {
+        const geocoder = new window.google.maps.Geocoder();
+        
+        streetViewLocations.forEach((location, idx) => {
+          geocoder.geocode(
+            { location: location.coordinates },
+            (results: any, status: any) => {
+              if (status === 'OK' && results[0]) {
+                // Extract street name from address components
+                const addressComponents = results[0].address_components;
+                const route = addressComponents.find((component: any) => 
+                  component.types.includes('route')
+                );
+                
+                if (route) {
+                  location.streetName = route.long_name;
+                  // Dispatch an event to notify that street name was updated
+                  const event = new CustomEvent('street-name-updated', { 
+                    detail: { index: idx, streetName: route.long_name } 
+                  });
+                  window.dispatchEvent(event);
+                }
+              }
+            }
+          );
+        });
+      } catch (error) {
+        console.error('Error getting street names:', error);
+      }
+    }, 1000);
+  }
+  
+  return { images: streetViewImages, locations: streetViewLocations };
 };
 
 // Calculate the distance between two coordinates in meters using Haversine formula
@@ -560,6 +592,9 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
   // Estimate duration (60 km/h speed)
   const durationInSeconds = (distanceInMeters / 1000) * (60 * 60 / 60);
   
+  // Get street view images and locations
+  const { images: streetViewImages, locations: streetViewLocations } = fetchStreetViewImages(points);
+  
   return {
     id,
     source,
@@ -570,7 +605,8 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
     duration: formatDuration(durationInSeconds),
     riskAreas: [],
     path: generateSVGPath(points),
-    streetViewImages: fetchStreetViewImages(points),
+    streetViewImages,
+    streetViewLocations,
     geminiAnalysis: {
       riskScores: [],
       averageRiskScore: 0,
