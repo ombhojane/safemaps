@@ -35,6 +35,7 @@ interface ComputeRoutesResponse {
         staticDuration: string;
       }[];
     }[];
+    routeLabels: string[];
   }[];
 }
 
@@ -98,7 +99,7 @@ export const computeRoutes = async (
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': API_KEY,
-        'X-Goog-FieldMask': 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.polyline,routes.distanceMeters,routes.duration',
+        'X-Goog-FieldMask': 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels',
       },
       body: JSON.stringify({
         origin: {
@@ -120,11 +121,6 @@ export const computeRoutes = async (
         travelMode: "DRIVE",
         routingPreference: "TRAFFIC_AWARE",
         computeAlternativeRoutes: true,
-        routeModifiers: {
-          avoidTolls: false,
-          avoidHighways: false,
-          avoidFerries: false,
-        },
         languageCode: "en-US",
         units: "IMPERIAL",
       }),
@@ -136,11 +132,142 @@ export const computeRoutes = async (
 
     const data: ComputeRoutesResponse = await response.json();
     
+    // Log routes received to help with debugging
+    console.log(`Received ${data.routes?.length || 0} routes from API`);
+    
     // Check if routes data exists
     if (!data || !data.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
       console.error('No routes returned from API');
-      // Return a mock route for testing
-      return [createMockRoute(source, destination)];
+      // Return two mock routes for testing
+      return [
+        createMockRoute(source, destination, 'route-0'),
+        createMockRoute(source, destination, 'route-1')
+      ];
+    }
+
+    // If we didn't get at least 2 routes, try a second API call with different routing preferences
+    if (data.routes.length < 2) {
+      console.log('Only one route returned, trying with avoid highways option');
+      
+      // Try a second API call with avoid highways option
+      try {
+        const alternativeResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': API_KEY,
+            'X-Goog-FieldMask': 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels',
+          },
+          body: JSON.stringify({
+            origin: {
+              location: {
+                latLng: {
+                  latitude: source.coordinates.lat,
+                  longitude: source.coordinates.lng,
+                }
+              }
+            },
+            destination: {
+              location: {
+                latLng: {
+                  latitude: destination.coordinates.lat,
+                  longitude: destination.coordinates.lng,
+                }
+              }
+            },
+            travelMode: "DRIVE",
+            routingPreference: "TRAFFIC_AWARE",
+            routeModifiers: {
+              avoidTolls: false,
+              avoidHighways: true,
+              avoidFerries: false,
+            },
+            languageCode: "en-US",
+            units: "IMPERIAL",
+          }),
+        });
+        
+        if (alternativeResponse.ok) {
+          const alternativeData: ComputeRoutesResponse = await alternativeResponse.json();
+          if (alternativeData && alternativeData.routes && alternativeData.routes.length > 0) {
+            // Add the alternative route to our routes array
+            data.routes.push(alternativeData.routes[0]);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching alternative route:', err);
+      }
+      
+      // If we still don't have 2 routes, try another approach with shortest distance
+      if (data.routes.length < 2) {
+        console.log('Still only one route, trying with shortest distance option');
+        
+        try {
+          const shortestResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': API_KEY,
+              'X-Goog-FieldMask': 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels',
+            },
+            body: JSON.stringify({
+              origin: {
+                location: {
+                  latLng: {
+                    latitude: source.coordinates.lat,
+                    longitude: source.coordinates.lng,
+                  }
+                }
+              },
+              destination: {
+                location: {
+                  latLng: {
+                    latitude: destination.coordinates.lat,
+                    longitude: destination.coordinates.lng,
+                  }
+                }
+              },
+              travelMode: "DRIVE",
+              routingPreference: "ROUTE_PREFERENCE_UNSPECIFIED", // Different preference
+              optimizeWaypointOrder: true,
+              languageCode: "en-US",
+              units: "IMPERIAL",
+            }),
+          });
+          
+          if (shortestResponse.ok) {
+            const shortestData: ComputeRoutesResponse = await shortestResponse.json();
+            if (shortestData && shortestData.routes && shortestData.routes.length > 0) {
+              // Add the shortest route to our routes array if it's different from existing route
+              if (!isSameRoute(data.routes[0], shortestData.routes[0])) {
+                data.routes.push(shortestData.routes[0]);
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error fetching shortest route:', err);
+        }
+      }
+      
+      // If we still don't have at least 2 routes, create mock alternative routes
+      if (data.routes.length < 2) {
+        console.log('Creating mock alternative routes as fallback');
+        // Create additional mock routes
+        for (let i = data.routes.length; i < 2; i++) {
+          data.routes.push({
+            distanceMeters: Math.round(data.routes[0].distanceMeters * (1 + (i * 0.1))),
+            duration: `${Math.round(parseInt(data.routes[0].duration) * (1 + (i * 0.1)))}s`,
+            polyline: { encodedPolyline: '' },
+            legs: [],
+            routeLabels: ["DEFAULT_ROUTE_ALTERNATE"]
+          });
+        }
+      }
+    }
+    
+    // Limit to maximum 4 routes
+    if (data.routes.length > 4) {
+      data.routes = data.routes.slice(0, 4);
     }
     
     // Fetch weather data for the source location only once
@@ -152,9 +279,9 @@ export const computeRoutes = async (
     
     // Process the routes data
     const routes = data.routes.map((route, index) => {
-      // Check if route has required properties
+      // For mock routes without polyline data, create a mock route
       if (!route.polyline || !route.polyline.encodedPolyline) {
-        console.error('Route missing polyline data', route);
+        console.log(`Route ${index} is missing polyline data, creating mock route`);
         return createMockRoute(source, destination, `route-${index}`);
       }
       
@@ -184,9 +311,14 @@ export const computeRoutes = async (
       // Generate street view images for the route
       const { images: streetViewImages, locations: streetViewLocations } = fetchStreetViewImages(points);
       
+      // Set the route's ID, using routeLabels if available to mark default vs alternative routes
+      const isAlternative = route.routeLabels && 
+                           route.routeLabels.includes("DEFAULT_ROUTE_ALTERNATE");
+      const routeId = isAlternative ? `route-alt-${index}` : `route-${index}`;
+      
       // Create route object with weather data if available
       const routeObject: Route = {
-        id: `route-${index}`,
+        id: routeId,
         source,
         destination,
         points: routePoints,
@@ -229,8 +361,11 @@ export const computeRoutes = async (
     return routes;
   } catch (error) {
     console.error('Error computing routes:', error);
-    // Return a mock route for better error recovery
-    return [createMockRoute(source, destination)];
+    // Return two mock routes for better error recovery
+    return [
+      createMockRoute(source, destination, 'route-0'),
+      createMockRoute(source, destination, 'route-1')
+    ];
   }
 };
 
@@ -567,40 +702,114 @@ export const generateNavigationUrl = (route: Route): string => {
 
 // Helper function to create a mock route when API fails
 const createMockRoute = (source: Location, destination: Location, id = 'route-fallback'): Route => {
-  // Create a direct line between source and destination
-  const points = [
-    { lat: source.coordinates.lat, lng: source.coordinates.lng },
-    { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
-  ];
+  // Extract route number from ID if exists
+  const routeNumber = id.includes('-') ? parseInt(id.split('-')[1]) || 0 : 0;
+  
+  // Create different waypoints based on route number
+  const waypoints = [];
+  const midLat = (source.coordinates.lat + destination.coordinates.lat) / 2;
+  const midLng = (source.coordinates.lng + destination.coordinates.lng) / 2;
+  
+  // Calculate a vector perpendicular to the direct path
+  const directionLat = destination.coordinates.lat - source.coordinates.lat;
+  const directionLng = destination.coordinates.lng - source.coordinates.lng;
+  
+  // Normalize and rotate 90 degrees to get perpendicular vector
+  const length = Math.sqrt(directionLat * directionLat + directionLng * directionLng);
+  const perpLat = -directionLng / length;
+  const perpLng = directionLat / length;
+  
+  // Create different route variations
+  if (routeNumber === 0) {
+    // First route - mostly direct with slight curve
+    waypoints.push(
+      { lat: source.coordinates.lat, lng: source.coordinates.lng },
+      { 
+        lat: midLat + perpLat * 0.01, 
+        lng: midLng + perpLng * 0.01 
+      },
+      { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+    );
+  } else if (routeNumber === 1) {
+    // Second route - different path
+    waypoints.push(
+      { lat: source.coordinates.lat, lng: source.coordinates.lng },
+      { 
+        lat: midLat - perpLat * 0.02, 
+        lng: midLng - perpLng * 0.02 
+      },
+      { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+    );
+  } else {
+    // For any other route number, create a more varied path
+    const deviation = (routeNumber % 2 === 0) ? 0.03 : -0.03;
+    
+    waypoints.push(
+      { lat: source.coordinates.lat, lng: source.coordinates.lng },
+      { 
+        lat: midLat * 0.7 + source.coordinates.lat * 0.3 + perpLat * deviation * 0.5, 
+        lng: midLng * 0.7 + source.coordinates.lng * 0.3 + perpLng * deviation * 0.5 
+      },
+      { 
+        lat: midLat + perpLat * deviation, 
+        lng: midLng + perpLng * deviation 
+      },
+      { 
+        lat: midLat * 0.3 + destination.coordinates.lat * 0.7 + perpLat * deviation * 0.5, 
+        lng: midLng * 0.3 + destination.coordinates.lng * 0.7 + perpLng * deviation * 0.5 
+      },
+      { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+    );
+  }
+  
+  // Generate more intermediate points for a smoother path
+  const points = generateSmoothPath(waypoints, 15);
   
   // Create route points with mock risk scores
   const routePoints: RoutePoint[] = points.map((point, idx) => ({
     coordinates: point,
-    riskScore: 2, // Medium risk score
+    riskScore: routeNumber === 0 ? 2 : routeNumber === 1 ? 5 : 7, // Different risk scores for different routes
     position: {
       x: `${idx}`,
       y: `${idx}`,
     },
   }));
   
-  // Calculate a mock distance (straight line)
-  const distanceInMeters = calculateDistance(
-    source.coordinates.lat, source.coordinates.lng,
-    destination.coordinates.lat, destination.coordinates.lng
-  );
+  // Calculate total distance along the path
+  let distanceInMeters = 0;
+  for (let i = 1; i < points.length; i++) {
+    distanceInMeters += calculateDistance(
+      points[i-1].lat, points[i-1].lng,
+      points[i].lat, points[i].lng
+    );
+  }
   
-  // Estimate duration (60 km/h speed)
-  const durationInSeconds = (distanceInMeters / 1000) * (60 * 60 / 60);
+  // Apply route-specific modifiers to make routes different
+  if (routeNumber === 1) {
+    // Second route is typically longer but might be faster
+    distanceInMeters *= 1.2;
+  } else if (routeNumber > 1) {
+    // Other routes have more variation
+    distanceInMeters *= 1.3;
+  }
+  
+  // Estimate duration (variable speeds depending on route)
+  // Speed in km/h: route 0: 60km/h, route 1: 70km/h, others: 50km/h
+  const speed = routeNumber === 0 ? 60 : routeNumber === 1 ? 70 : 50;
+  const durationInSeconds = (distanceInMeters / 1000) * (60 * 60 / speed);
   
   // Get street view images and locations
   const { images: streetViewImages, locations: streetViewLocations } = fetchStreetViewImages(points);
+  
+  // Different risk score based on route number
+  const riskScore = routeNumber === 0 ? 3 : routeNumber === 1 ? 6 : 8;
   
   return {
     id,
     source,
     destination,
     points: routePoints,
-    riskScore: 5,
+    riskScore,
     distance: formatDistance(distanceInMeters),
     duration: formatDuration(durationInSeconds),
     riskAreas: [],
@@ -613,4 +822,96 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
       isAnalyzing: false
     }
   };
+};
+
+// Helper function to generate a smooth path between waypoints
+const generateSmoothPath = (
+  waypoints: { lat: number; lng: number }[], 
+  totalPoints: number
+): { lat: number; lng: number }[] => {
+  if (waypoints.length <= 1) return waypoints;
+  if (waypoints.length === 2) {
+    // Just create evenly spaced points between the two waypoints
+    const result = [];
+    for (let i = 0; i < totalPoints; i++) {
+      const ratio = i / (totalPoints - 1);
+      result.push({
+        lat: waypoints[0].lat * (1 - ratio) + waypoints[1].lat * ratio,
+        lng: waypoints[0].lng * (1 - ratio) + waypoints[1].lng * ratio
+      });
+    }
+    return result;
+  }
+  
+  // For more complex paths, use a simple spline interpolation
+  const result = [];
+  
+  // Always include the first waypoint
+  result.push(waypoints[0]);
+  
+  // Number of points to generate between each pair of waypoints
+  const pointsPerSegment = Math.max(2, Math.floor(totalPoints / (waypoints.length - 1)));
+  
+  // Generate points between each pair of waypoints
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const start = waypoints[i];
+    const end = waypoints[i + 1];
+    
+    // Calculate control points for a quadratic bezier curve
+    let controlPoint;
+    
+    if (i === 0 || i === waypoints.length - 2) {
+      // For first and last segments, use a simple midpoint
+      controlPoint = {
+        lat: (start.lat + end.lat) / 2,
+        lng: (start.lng + end.lng) / 2
+      };
+    } else {
+      // For middle segments, use previous and next points to influence control point
+      const prev = waypoints[i - 1];
+      const next = waypoints[i + 2 >= waypoints.length ? i + 1 : i + 2];
+      
+      controlPoint = {
+        lat: (prev.lat + next.lat) / 2,
+        lng: (prev.lng + next.lng) / 2
+      };
+    }
+    
+    // Generate points along the curve
+    for (let j = 1; j <= pointsPerSegment; j++) {
+      const t = j / pointsPerSegment;
+      
+      // Quadratic bezier formula: (1-t)²P₀ + 2(1-t)tP₁ + t²P₂
+      const lat = (1 - t) * (1 - t) * start.lat + 
+                  2 * (1 - t) * t * controlPoint.lat + 
+                  t * t * end.lat;
+      
+      const lng = (1 - t) * (1 - t) * start.lng + 
+                  2 * (1 - t) * t * controlPoint.lng + 
+                  t * t * end.lng;
+      
+      result.push({ lat, lng });
+    }
+  }
+  
+  // Add small random jitter to make the route look more natural
+  return result.map(point => ({
+    lat: point.lat + (Math.random() - 0.5) * 0.0005,
+    lng: point.lng + (Math.random() - 0.5) * 0.0005
+  }));
+};
+
+// Helper function to check if two routes are the same
+const isSameRoute = (route1: ComputeRoutesResponse['routes'][0], route2: ComputeRoutesResponse['routes'][0]): boolean => {
+  if (!route1 || !route2) return false;
+  
+  // Compare distance and duration with some tolerance
+  const distanceTolerance = 0.05; // 5% tolerance
+  const distanceDiff = Math.abs(route1.distanceMeters - route2.distanceMeters) / route1.distanceMeters;
+  
+  const duration1 = parseInt(route1.duration.replace('s', ''));
+  const duration2 = parseInt(route2.duration.replace('s', ''));
+  const durationDiff = Math.abs(duration1 - duration2) / duration1;
+  
+  return distanceDiff < distanceTolerance && durationDiff < distanceTolerance;
 }; 
