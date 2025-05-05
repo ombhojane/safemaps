@@ -62,6 +62,37 @@ export interface Route {
   tollsOnRoute?: boolean;
   alternateRouteAvailable?: boolean;
   expectedArrivalTime?: Date;
+  // Add step polylines for visualizing different segments (walking vs. transit)
+  stepPolylines?: StepPolyline[];
+  // Google Maps API response properties - required for API compatibility
+  distanceMeters: number;
+  polyline: {
+    encodedPolyline: string;
+  };
+  legs: {
+    steps: {
+      polyline: {
+        encodedPolyline: string;
+      };
+      distanceMeters: number;
+      staticDuration?: string;
+      travelMode?: string;
+      transitDetails?: TransitStep;
+    }[];
+    startLocation?: {
+      latLng: {
+        latitude: number;
+        longitude: number;
+      };
+    };
+    endLocation?: {
+      latLng: {
+        latitude: number;
+        longitude: number;
+      };
+    };
+  }[];
+  routeLabels?: string[];
 }
 
 export interface RiskArea {
@@ -129,6 +160,14 @@ export interface StreetViewLocation {
   streetName?: string;
 }
 
+// New interface for step polylines
+export interface StepPolyline {
+  points: { lat: number; lng: number }[];
+  travelMode: string;
+  distanceMeters: number;
+  duration: string;
+}
+
 // Transit details interface
 export interface TransitStep {
   type: string;
@@ -142,9 +181,62 @@ export interface TransitStep {
   numStops?: number;
   agency?: string;
   color?: string;
+  textColor?: string;
   vehicle?: string;
   iconUri?: string;
   duration?: string;
   durationText?: string;
   distance?: string;
+  polyline?: string;
+  // Simplified coordinates for visualization
+  departureCoordinates?: {
+    lat: number;
+    lng: number;
+  };
+  arrivalCoordinates?: {
+    lat: number;
+    lng: number;
+  };
+  transitDetails?: {
+    stopDetails: {
+      arrivalStop: {
+        name: string;
+        location?: {
+          latLng: {
+            latitude: number;
+            longitude: number;
+          }
+        }
+      };
+      departureStop: {
+        name: string;
+        location?: {
+          latLng: {
+            latitude: number;
+            longitude: number;
+          }
+        }
+      };
+      arrivalTime?: string;
+      departureTime?: string;
+    };
+    headsign?: string;
+    headway?: string;
+    line?: {
+      agencies?: {
+        name: string;
+        uri?: string;
+      }[];
+      name?: string;
+      vehicle?: {
+        name?: string;
+        type?: string;
+        iconUri?: string;
+      };
+      color?: string;
+      textColor?: string;
+      shortName?: string;
+    };
+    numStops?: number;
+  };
 }

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import Map from "@/components/Map";
 import RouteForm from "@/components/RouteForm";
-import RouteList from "@/components/RouteList";
+import RouteDisplay from '@/components/RouteDisplay';
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route, StreetViewLocation } from "@/types";
 import { 
@@ -12,7 +12,6 @@ import {
 } from "@/services/mapsService";
 import TravelModeTabs from "@/components/TravelModeTabs";
 import TravelModeSelector from "@/components/TravelModeSelector";
-import RouteOptions from "@/components/RouteOptions";
 import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Menu, X, ChevronUp, ChevronDown, Twitter, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -482,16 +481,7 @@ const Index = () => {
             isLoading={isLoading} 
             onSourceLocationChange={handleSourceLocationChange}
           />
-          
-          {/* Show travel mode selector when routes are available */}
-          {routes.length > 0 && currentSource && currentDestination && (
-            <TravelModeSelector
-              selectedMode={selectedTravelMode}
-              onModeChange={handleTravelModeChange}
-              isLoading={isLoading}
-            />
-          )}
-        </div>
+      </div>
         
       {/* Error Message */}
         {error && (
@@ -513,45 +503,26 @@ const Index = () => {
           </div>
       )}
       
-      {/* Sidebar for route info - slides in from left - Desktop Only */}
+      {/* Desktop view sidebar */}
       {routes.length > 0 && (
         <div className={cn(
           "absolute left-0 top-0 bottom-0 z-40 w-full max-w-md bg-background/95 backdrop-blur-md overflow-auto transition-transform duration-300 border-r shadow-lg hidden lg:block",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}>
           <div className="flex flex-col h-full py-16 px-4">
-            {/* Travel mode selector for desktop view - visible even when sidebar is open */}
-            {routes.length > 0 && currentSource && currentDestination && (
-              <div className="mb-4">
-                <TravelModeSelector
-                  selectedMode={selectedTravelMode}
-                  onModeChange={handleTravelModeChange}
-                  isLoading={isLoading}
-                />
-              </div>
-            )}
-            
-            {/* Routes List */}
+            {/* Routes Display - consolidated component */}
             <div className="mb-4">
-              <RouteList 
+              <RouteDisplay 
                 routes={routes} 
                 selectedRouteId={selectedRouteId} 
                 onRouteSelect={handleRouteSelect}
                 onStartTrip={handleStartTrip}
                 isStartingTrip={isStartingTrip}
                 travelMode={selectedTravelMode}
+                onTravelModeChange={handleTravelModeChange}
+                isLoading={isLoading}
               />
             </div>
-            
-            {/* Route travel mode specific options (for transit details, etc.) */}
-            {routes.length > 0 && (
-              <RouteOptions
-                routes={routes}
-                selectedRouteId={selectedRouteId || routes[0].id}
-                onRouteSelect={handleRouteSelect}
-                travelMode={selectedTravelMode}
-              />
-            )}
             
             {/* Selected Route Details */}
               {selectedRoute && (
@@ -731,32 +702,18 @@ const Index = () => {
           
           {/* Scrollable content */}
           <div className="overflow-auto pb-safe max-h-[calc(90vh-6rem)] px-4">
-            {/* Route list */}
-            <div className="mb-4">
-              <RouteList 
+            <RouteDisplay 
                 routes={routes} 
                 selectedRouteId={selectedRouteId} 
                 onRouteSelect={handleRouteSelect}
                 onStartTrip={handleStartTrip}
                 isStartingTrip={isStartingTrip}
-                compact={true}
-                travelMode={selectedTravelMode}
+              travelMode={selectedTravelMode}
               />
-            </div>
-            
-            {/* Route travel mode specific options (for transit details, etc.) */}
-            {routes.length > 0 && (
-              <RouteOptions
-                routes={routes}
-                selectedRouteId={selectedRouteId || routes[0].id}
-                onRouteSelect={handleRouteSelect}
-                travelMode={selectedTravelMode}
-              />
-            )}
             
             {/* Route details (shown when expanded) */}
             {selectedRoute && bottomSheetState !== 'peek' && (
-              <div key={routeDetailsKey} className="bg-card rounded-lg border p-4 shadow-sm mb-4">
+              <div key={routeDetailsKey} className="bg-card rounded-lg border p-4 shadow-sm mb-4 mt-4">
                 <div className="flex justify-between items-start mb-3">
                   <h2 className="text-lg font-medium">Route Details</h2>
                 </div>
