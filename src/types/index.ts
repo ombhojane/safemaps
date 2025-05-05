@@ -1,3 +1,5 @@
+import { TravelMode } from '@/services/mapsService';
+
 export interface Location {
   name: string;
   coordinates: {
@@ -34,6 +36,9 @@ export interface Route {
   // Add street view images with their locations
   streetViewImages?: string[];
   streetViewLocations?: StreetViewLocation[];
+  // Add travel mode and transit details
+  travelMode?: TravelMode;
+  transitDetails?: TransitStep[];
   // Add Gemini analysis results
   geminiAnalysis?: {
     riskScores: number[];
@@ -41,6 +46,7 @@ export interface Route {
     isAnalyzing: boolean;
     explanations?: string[];
     precautions?: string[];
+    error?: string;
   };
   // Add weather information
   weather?: {
@@ -121,4 +127,24 @@ export interface StreetViewLocation {
   heading: number;
   index: number;
   streetName?: string;
+}
+
+// Transit details interface
+export interface TransitStep {
+  type: string;
+  mode?: string;
+  line?: string;
+  headsign?: string;
+  departureStop?: string;
+  arrivalStop?: string;
+  departureTime?: string;
+  arrivalTime?: string;
+  numStops?: number;
+  agency?: string;
+  color?: string;
+  vehicle?: string;
+  iconUri?: string;
+  duration?: string;
+  durationText?: string;
+  distance?: string;
 }

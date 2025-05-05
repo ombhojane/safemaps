@@ -15,8 +15,8 @@ interface StreetViewGalleryProps {
     riskScores: number[];
     averageRiskScore: number;
     isAnalyzing: boolean;
-    explanations: string[];
-    precautions: string[];
+    explanations?: string[];
+    precautions?: string[];
   };
   locations?: StreetViewLocation[];
   onImageClick?: (location: StreetViewLocation) => void;
