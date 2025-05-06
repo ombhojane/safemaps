@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, forwardRef } from "react";
 import { Route, Location, StreetViewLocation } from "@/types";
-import { loadGoogleMapsApi, decodePolyline } from "@/services/mapsService";
+import { loadGoogleMapsApi, decodePolyline, TravelMode } from "@/services/mapsService";
 import { cn } from "@/lib/utils";
 
 // Add simplified type declarations - remove the previous declaration
@@ -122,14 +122,134 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
         // Create bounds to contain all routes
         const bounds = new window.google.maps.LatLngBounds();
 
+        // Find selected route
+        const selectedRoute = routes.find(r => r.id === selectedRouteId) || routes[0];
+
         // Create polylines for each route
         routes.forEach((route, index) => {
+          const isSelected = route.id === selectedRouteId;
+          
+          // If this route is selected and has step polylines, draw detailed segments
+          if (isSelected && route.stepPolylines && route.stepPolylines.length > 0 && route.travelMode === TravelMode.TRANSIT) {
+            // Draw each segment with appropriate styling based on travel mode
+            route.stepPolylines.forEach(step => {
+              const isWalking = step.travelMode === 'WALKING';
+              
+              // Create custom styling based on travel mode
+              const polyline = new window.google.maps.Polyline({
+                path: step.points,
+                geodesic: true,
+                strokeColor: isWalking ? '#4A87D5' : getRiskColor(route.riskScore, isSelected),
+                strokeOpacity: isSelected ? 1.0 : 0.7,
+                strokeWeight: isSelected ? 4 : 3,
+                map: googleMap,
+                zIndex: isSelected ? 10 : index,
+                // Use dotted line for walking segments
+                icons: isWalking ? [{
+                  icon: {
+                    path: 'M 0,-0.1 0,0.1',
+                    strokeOpacity: 1,
+                    scale: 3
+                  },
+                  offset: '0',
+                  repeat: '10px'
+                }] : null
+              });
+              
+              // Store the polyline for later cleanup
+              routePolylinesRef.current.push(polyline);
+              
+              // Extend bounds to include this segment
+              step.points.forEach(point => {
+                bounds.extend(point);
+              });
+              
+              // If this is a transit step with departure/arrival points, add station markers
+              if (step.travelMode === 'TRANSIT') {
+                const transitDetails = route.transitDetails?.find(t => t.polyline === step.points.map(p => `${p.lat},${p.lng}`).join(';'));
+                
+                if (transitDetails?.departureCoordinates) {
+                  const stationMarker = new window.google.maps.Marker({
+                    position: transitDetails.departureCoordinates,
+                    map: googleMap,
+                    title: transitDetails.departureStop || "Transit Stop",
+                    icon: {
+                      path: window.google.maps.SymbolPath.CIRCLE,
+                      fillColor: transitDetails.color || "#3b82f6",
+                      fillOpacity: 1,
+                      strokeColor: "#ffffff",
+                      strokeWeight: 1,
+                      scale: 4
+                    }
+                  });
+                  markersRef.current.push(stationMarker);
+                }
+                
+                if (transitDetails?.arrivalCoordinates) {
+                  const stationMarker = new window.google.maps.Marker({
+                    position: transitDetails.arrivalCoordinates,
+                    map: googleMap,
+                    title: transitDetails.arrivalStop || "Transit Stop",
+                    icon: {
+                      path: window.google.maps.SymbolPath.CIRCLE,
+                      fillColor: transitDetails.color || "#3b82f6",
+                      fillOpacity: 1,
+                      strokeColor: "#ffffff",
+                      strokeWeight: 1,
+                      scale: 4
+                    }
+                  });
+                  markersRef.current.push(stationMarker);
+                }
+              }
+            });
+          } 
+          // For walking routes, use dotted lines
+          else if (isSelected && route.travelMode === TravelMode.WALK) {
+            // Decode polyline if needed
+            const points = route.points.map(point => point.coordinates);
+            
+            // Create a dotted polyline for walking routes
+            const polyline = new window.google.maps.Polyline({
+              path: points,
+              geodesic: true,
+              strokeColor: getRiskColor(route.riskScore, isSelected),
+              strokeOpacity: isSelected ? 1.0 : 0.7,
+              strokeWeight: isSelected ? 4 : 3,
+              map: googleMap,
+              zIndex: isSelected ? 10 : index,
+              icons: [{
+                icon: {
+                  path: 'M 0,-0.1 0,0.1',
+                  strokeOpacity: 1,
+                  scale: 3
+                },
+                offset: '0',
+                repeat: '10px'
+              }]
+            });
+            
+            // Add click handler for route selection
+            if (onRouteSelect) {
+              polyline.addListener("click", () => {
+                onRouteSelect(route.id);
+              });
+            }
+            
+            // Store the polyline for later cleanup
+            routePolylinesRef.current.push(polyline);
+            
+            // Extend bounds to include this route
+            points.forEach(point => {
+              bounds.extend(point);
+            });
+          } 
+          // For non-selected routes or routes without step polylines, draw as usual
+          else {
           // Decode polyline if needed
           const points = route.points.map(point => point.coordinates);
           
           // Create a polyline for the route
-          const isSelected = route.id === selectedRouteId;
-          
           const polyline = new window.google.maps.Polyline({
             path: points,
             geodesic: true,
@@ -154,6 +274,7 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
           points.forEach(point => {
             bounds.extend(point);
           });
+          }
         });
 
         // Add markers for source and destination
@@ -306,15 +427,17 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
     try {
       // Update polyline styles based on selection
       routePolylinesRef.current.forEach((polyline, index) => {
+        if (index < routes.length) {
         const route = routes[index];
-        const isSelected = route.id === selectedRouteId;
+          const isSelected = route && route.id === selectedRouteId;
         
         polyline.setOptions({
-          strokeColor: getRiskColor(route.riskScore, isSelected),
+            strokeColor: getRiskColor(route ? route.riskScore : 0, isSelected),
           strokeOpacity: isSelected ? 1.0 : 0.7,
           strokeWeight: isSelected ? 5 : 3,
           zIndex: isSelected ? 10 : index
         });
+        }
       });
     } catch (error) {
       console.error("Error updating selected route:", error);

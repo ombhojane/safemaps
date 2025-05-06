@@ -1,10 +1,17 @@
 import { useState, useRef, useEffect, useMemo } from "react";
 import Map from "@/components/Map";
 import RouteForm from "@/components/RouteForm";
-import RouteList from "@/components/RouteList";
+import RouteDisplay from '@/components/RouteDisplay';
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route, StreetViewLocation } from "@/types";
-import { computeRoutes, generateNavigationUrl, ROUTE_ANALYSIS_COMPLETE_EVENT } from "@/services/mapsService";
+import { 
+  computeRoutes, 
+  generateNavigationUrl, 
+  ROUTE_ANALYSIS_COMPLETE_EVENT,
+  TravelMode 
+} from "@/services/mapsService";
+import TravelModeTabs from "@/components/TravelModeTabs";
+import TravelModeSelector from "@/components/TravelModeSelector";
 import { MapPinned, AlertTriangle, MapPin, Image as ImageIcon, BarChart, Navigation, AlertCircle, Lightbulb, Menu, X, ChevronUp, ChevronDown, Twitter, Loader2, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -29,6 +36,20 @@ const Index = () => {
   const [viewedLocationIndex, setViewedLocationIndex] = useState<number | undefined>(undefined);
   const [isNavigating, setIsNavigating] = useState(false);
   const [navigatingRoute, setNavigatingRoute] = useState<Route | null>(null);
+  
+  // Add travel mode state
+  const [selectedTravelMode, setSelectedTravelMode] = useState<TravelMode>(TravelMode.DRIVE);
+  const [routesByMode, setRoutesByMode] = useState<Partial<Record<TravelMode, Route[]>>>({
+    [TravelMode.DRIVE]: [],
+    [TravelMode.TRANSIT]: [],
+    [TravelMode.WALK]: [],
+    [TravelMode.BICYCLE]: [],
+    [TravelMode.TWO_WHEELER]: []
+  });
+  
+  // Store source and destination for reuse when changing travel modes
+  const [currentSource, setCurrentSource] = useState<Location | null>(null);
+  const [currentDestination, setCurrentDestination] = useState<Location | null>(null);
 
   const handleRouteSubmit = async (source: Location, destination: Location) => {
     setIsLoading(true);
@@ -36,10 +57,20 @@ const Index = () => {
     setRoutes([]);
     setSelectedRouteId(undefined);
     
+    // Store current source and destination for reuse
+    setCurrentSource(source);
+    setCurrentDestination(destination);
+    
     try {
-      // Fetch routes using the Routes API via our mapsService
-      const fetchedRoutes = await computeRoutes(source, destination);
+      // Fetch routes using the Routes API via our mapsService with the selected travel mode
+      const fetchedRoutes = await computeRoutes(source, destination, selectedTravelMode);
       setRoutes(fetchedRoutes);
+      
+      // Store routes by travel mode
+      setRoutesByMode(prev => ({
+        ...prev,
+        [selectedTravelMode]: fetchedRoutes
+      }));
       
       // Auto-select the safest route (lowest risk score)
       if (fetchedRoutes.length > 0) {
@@ -65,6 +96,54 @@ const Index = () => {
     }
   };
 
+  // Handle travel mode change
+  const handleTravelModeChange = async (mode: TravelMode) => {
+    if (!currentSource || !currentDestination) return;
+    
+    // Set the selected travel mode
+    setSelectedTravelMode(mode);
+    
+    // Check if we already have routes for this mode
+    if (routesByMode[mode].length > 0) {
+      setRoutes(routesByMode[mode]);
+      
+      // Auto-select the safest route for this mode
+      if (routesByMode[mode].length > 0) {
+        const safestRoute = [...routesByMode[mode]].sort((a, b) => a.riskScore - b.riskScore)[0];
+        setSelectedRouteId(safestRoute.id);
+      }
+      return;
+    }
+    
+    // If not, fetch routes for this mode
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const fetchedRoutes = await computeRoutes(currentSource, currentDestination, mode);
+      
+      // Update routes
+      setRoutes(fetchedRoutes);
+      
+      // Store routes by travel mode
+      setRoutesByMode(prev => ({
+        ...prev,
+        [mode]: fetchedRoutes
+      }));
+      
+      // Auto-select the safest route
+      if (fetchedRoutes.length > 0) {
+        const safestRoute = [...fetchedRoutes].sort((a, b) => a.riskScore - b.riskScore)[0];
+        setSelectedRouteId(safestRoute.id);
+      }
+    } catch (error) {
+      console.error(`Error fetching routes for ${mode}:`, error);
+      setError(`Failed to fetch ${mode} routes. Please try again.`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRouteSelect = (routeId: string) => {
     setSelectedRouteId(routeId);
   };
@@ -85,6 +164,26 @@ const Index = () => {
         } : route
       )
     );
+    
+    // Also update the routes in routesByMode
+    setRoutesByMode(prev => {
+      const updatedModes = { ...prev };
+      Object.keys(updatedModes).forEach(mode => {
+        updatedModes[mode as TravelMode] = updatedModes[mode as TravelMode].map(route =>
+          route.id === routeId ? {
+            ...route,
+            geminiAnalysis: {
+              riskScores,
+              averageRiskScore,
+              explanations,
+              precautions,
+              isAnalyzing: false
+            }
+          } : route
+        );
+      });
+      return updatedModes;
+    });
   };
 
   // Start the Gemini analysis process
@@ -382,7 +481,7 @@ const Index = () => {
             isLoading={isLoading} 
             onSourceLocationChange={handleSourceLocationChange}
           />
-        </div>
+      </div>
         
       {/* Error Message */}
         {error && (
@@ -404,21 +503,24 @@ const Index = () => {
           </div>
       )}
       
-      {/* Sidebar for route info - slides in from left - Desktop Only */}
+      {/* Desktop view sidebar */}
       {routes.length > 0 && (
         <div className={cn(
-          "absolute left-0 top-0 bottom-0 z-20 w-full max-w-md bg-background/95 backdrop-blur-md overflow-auto transition-transform duration-300 border-r shadow-lg hidden lg:block",
+          "absolute left-0 top-0 bottom-0 z-40 w-full max-w-md bg-background/95 backdrop-blur-md overflow-auto transition-transform duration-300 border-r shadow-lg hidden lg:block",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}>
           <div className="flex flex-col h-full py-16 px-4">
-            {/* Routes List */}
+            {/* Routes Display - consolidated component */}
             <div className="mb-4">
-              <RouteList 
+              <RouteDisplay 
                 routes={routes} 
                 selectedRouteId={selectedRouteId} 
                 onRouteSelect={handleRouteSelect}
                 onStartTrip={handleStartTrip}
                 isStartingTrip={isStartingTrip}
+                travelMode={selectedTravelMode}
+                onTravelModeChange={handleTravelModeChange}
+                isLoading={isLoading}
               />
             </div>
             
@@ -541,7 +643,7 @@ const Index = () => {
                     <StreetViewGallery
                       images={selectedRoute.streetViewImages || []}
                       className="mb-4"
-                      geminiAnalysis={selectedRoute.geminiAnalysis as any}
+                      geminiAnalysis={selectedRoute.geminiAnalysis}
                       onAnalysisComplete={(riskScores, averageRiskScore, explanations, precautions) => 
                         handleAnalysisComplete(selectedRoute.id, riskScores, averageRiskScore, explanations, precautions)
                       }
@@ -588,23 +690,30 @@ const Index = () => {
             </Button>
           </div>
           
+          {/* Travel mode tabs for mobile */}
+          <div className="px-4 pb-2">
+            <TravelModeTabs 
+              selectedMode={selectedTravelMode}
+              onModeChange={handleTravelModeChange}
+              routesByMode={routesByMode}
+              isLoading={isLoading}
+            />
+          </div>
+          
           {/* Scrollable content */}
           <div className="overflow-auto pb-safe max-h-[calc(90vh-6rem)] px-4">
-            {/* Route list */}
-            <div className="mb-4">
-              <RouteList 
+            <RouteDisplay 
                 routes={routes} 
                 selectedRouteId={selectedRouteId} 
                 onRouteSelect={handleRouteSelect}
                 onStartTrip={handleStartTrip}
                 isStartingTrip={isStartingTrip}
-                compact={bottomSheetState === 'peek'}
+              travelMode={selectedTravelMode}
               />
-            </div>
             
             {/* Route details (shown when expanded) */}
             {selectedRoute && bottomSheetState !== 'peek' && (
-              <div key={routeDetailsKey} className="bg-card rounded-lg border p-4 shadow-sm mb-4">
+              <div key={routeDetailsKey} className="bg-card rounded-lg border p-4 shadow-sm mb-4 mt-4">
                 <div className="flex justify-between items-start mb-3">
                   <h2 className="text-lg font-medium">Route Details</h2>
                 </div>
@@ -723,7 +832,7 @@ const Index = () => {
                       <StreetViewGallery
                         images={selectedRoute.streetViewImages || []}
                         className="mb-4"
-                        geminiAnalysis={selectedRoute.geminiAnalysis as any}
+                        geminiAnalysis={selectedRoute.geminiAnalysis}
                         onAnalysisComplete={(riskScores, averageRiskScore, explanations, precautions) => 
                           handleAnalysisComplete(selectedRoute.id, riskScores, averageRiskScore, explanations, precautions)
                         }

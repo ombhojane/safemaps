@@ -1,12 +1,14 @@
+import React from 'react';
 import { Route } from "@/types";
 import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Clock, Route as RouteIcon, Gauge, BarChart, CheckCircle2, Loader2, Navigation, Cloud, Sun, CloudRain, Thermometer } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { generateNavigationUrl } from "@/services/mapsService";
+import { generateNavigationUrl, TravelMode } from "@/services/mapsService";
 import { getWeatherIconUrl } from "@/services/weatherService";
 import { useEffect, useState } from "react";
+import TransitDetails from './TransitDetails';
 
 interface RouteListProps {
   routes: Route[];
@@ -16,6 +18,7 @@ interface RouteListProps {
   isStartingTrip?: boolean;
   className?: string;
   compact?: boolean;
+  travelMode: TravelMode;
 }
 
 const RouteList = ({ 
@@ -25,7 +28,8 @@ const RouteList = ({
   onStartTrip,
   isStartingTrip = false,
   className,
-  compact = false
+  compact = false,
+  travelMode
 }: RouteListProps) => {
   // Add a key to force re-render when routes change
   const [routesKey, setRoutesKey] = useState(0);
@@ -71,6 +75,36 @@ const RouteList = ({
     } else {
       return <Cloud className="h-4 w-4 text-gray-500" />;
     }
+  };
+
+  // Get icon for travel mode
+  const getTravelModeIcon = (mode: TravelMode) => {
+    switch (mode) {
+      case TravelMode.DRIVE: return '🚗';
+      case TravelMode.TRANSIT: return '🚌';
+      case TravelMode.WALK: return '🚶';
+      case TravelMode.BICYCLE: return '🚲';
+      case TravelMode.TWO_WHEELER: return '🏍️';
+      default: return '🚗';
+    }
+  };
+
+  // Function to get via info text
+  const getViaText = (route: Route): string => {
+    if (travelMode === TravelMode.TRANSIT && route.transitDetails && route.transitDetails.length > 0) {
+      // For transit, show the transportation method
+      const transitTypes = route.transitDetails
+        .filter(step => step.type === 'TRANSIT')
+        .map(step => step.line)
+        .filter(Boolean);
+      
+      if (transitTypes.length > 0) {
+        return `via ${transitTypes.join(', ')}`;
+      }
+    }
+    
+    // For driving/walking, we could include major road names if available
+    return `via ${route.id.includes('alt') ? 'alternative route' : 'fastest route'}`;
   };
 
   return (

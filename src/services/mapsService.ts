@@ -1,4 +1,4 @@
-import { Location, Route, RoutePoint } from "@/types";
+import { Location, Route, RoutePoint, TransitStep } from "@/types";
 import { analyzeStreetViewImages, calculateAverageRiskScore } from "@/services/geminiService";
 import { getRouteLocationWeather, getWeatherCondition } from "@/services/weatherService";
 
@@ -33,11 +33,87 @@ interface ComputeRoutesResponse {
         };
         distanceMeters: number;
         staticDuration: string;
+        travelMode?: string;
+        transitDetails?: {
+          stopDetails?: {
+            arrivalStop?: {
+              name: string;
+              location?: {
+                latLng: {
+                  latitude: number;
+                  longitude: number;
+                }
+              }
+            };
+            departureStop?: {
+              name: string;
+              location?: {
+                latLng: {
+                  latitude: number;
+                  longitude: number;
+                }
+              }
+            };
+            arrivalTime?: string;
+            departureTime?: string;
+          };
+          headsign?: string;
+          headway?: string;
+          localizedValues?: {
+            arrivalTime: string;
+            departureTime: string;
+          };
+          line?: {
+            agencies?: {
+              name: string;
+              uri?: string;
+            }[];
+            name?: string;
+            vehicle?: {
+              name?: string;
+              type?: string;
+              iconUri?: string;
+            };
+            color?: string;
+            textColor?: string;
+            shortName?: string;
+          };
+          numStops?: number;
+        };
       }[];
+      startLocation?: {
+        latLng: {
+          latitude: number;
+          longitude: number;
+        }
+      };
+      endLocation?: {
+        latLng: {
+          latitude: number;
+          longitude: number;
+        }
+      };
     }[];
     routeLabels: string[];
   }[];
 }
+
+// Available travel modes for the Routes API
+export enum TravelMode {
+  DRIVE = "DRIVE",
+  WALK = "WALK",
+  BICYCLE = "BICYCLE",
+  TRANSIT = "TRANSIT",
+  TWO_WHEELER = "TWO_WHEELER"
+}
+
+// The supported travel modes (hide unsupported modes)
+export const SUPPORTED_TRAVEL_MODES = [
+  TravelMode.DRIVE, 
+  TravelMode.TRANSIT, 
+  TravelMode.WALK,
+  TravelMode.TWO_WHEELER
+];
 
 // Function to load Google Maps API script
 export const loadGoogleMapsApi = (): Promise<void> => {
@@ -87,21 +163,165 @@ export function decodePolyline(encodedPolyline: string): { lat: number; lng: num
   return points;
 }
 
+// Function to encode points into a polyline string
+export function encodePolyline(points: { lat: number; lng: number }[]): string {
+  const encode = (val: number): string => {
+    val = Math.round(val * 1e5);
+    val = val << 1;
+    if (val < 0) {
+      val = ~val;
+    }
+    let result = '';
+    while (val >= 0x20) {
+      result += String.fromCharCode((0x20 | (val & 0x1f)) + 63);
+      val >>= 5;
+    }
+    result += String.fromCharCode(val + 63);
+    return result;
+  };
+
+  let result = '';
+  let prevLat = 0;
+  let prevLng = 0;
+
+  points.forEach(point => {
+    result += encode(point.lat - prevLat);
+    result += encode(point.lng - prevLng);
+    prevLat = point.lat;
+    prevLng = point.lng;
+  });
+
+  return result;
+}
+
 // Function to compute routes between source and destination
 export const computeRoutes = async (
   source: Location,
-  destination: Location
+  destination: Location,
+  travelMode: TravelMode = TravelMode.DRIVE // Default to driving
 ): Promise<Route[]> => {
   try {
-    // Make API request to compute routes
-    const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': API_KEY,
-        'X-Goog-FieldMask': 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels',
-      },
-      body: JSON.stringify({
+    console.log(`Computing routes from ${source.name} to ${destination.name} via ${travelMode}`);
+    
+    // Skip unsupported modes
+    if (!SUPPORTED_TRAVEL_MODES.includes(travelMode)) {
+      console.warn(`${travelMode} mode is not fully supported, using mock routes`);
+      const mockRoutes = [
+        createMockRoute(source, destination, 'route-0', travelMode),
+        createMockRoute(source, destination, 'route-1', travelMode)
+      ];
+      // Start Gemini analysis for the mock routes
+      analyzeAllRoutes(mockRoutes);
+      return mockRoutes;
+    }
+    
+    // Special handling for TWO_WHEELER mode
+    let routingPreference = "";
+    let routeModifiers = {};
+    let computeAlternativeRoutes = true;
+    
+    // Enhanced field masks for better data retrieval
+    let fieldMask = 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.travelMode,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels';
+    
+    // Transit specific options
+    let transitPreferences = undefined;
+    
+    // Configure parameters based on travel mode
+    if (travelMode === TravelMode.DRIVE || travelMode === TravelMode.TWO_WHEELER) {
+      routingPreference = "TRAFFIC_AWARE";
+      routeModifiers = {
+        avoidHighways: travelMode === TravelMode.TWO_WHEELER,
+        avoidTolls: travelMode === TravelMode.TWO_WHEELER
+      };
+    } else if (travelMode === TravelMode.TRANSIT) {
+      // Enhanced field mask for transit to get more detailed transit information
+      fieldMask = 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.legs.steps.travelMode,routes.legs.steps.transitDetails,routes.legs.stepsOverview,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels';
+      
+      // Configure transit preferences for better routes
+      transitPreferences = {
+        routingPreference: "LESS_WALKING",
+        allowedTravelModes: ["BUS", "SUBWAY", "TRAIN", "LIGHT_RAIL", "RAIL"]
+      };
+    } else if (travelMode === TravelMode.WALK) {
+      // For walking routes, we want the most accurate path
+      // Don't set routingPreference for walking as it's not supported
+      computeAlternativeRoutes = true;
+    } else if (travelMode === TravelMode.BICYCLE) {
+      // For bicycle routes, we prefer safer routes with dedicated bike lanes
+      // Don't set routingPreference for bicycle as it's not supported
+      routeModifiers = {
+        avoidHighways: true
+      };
+    }
+    
+    // Validate source and destination coordinates
+    if (!source.coordinates || !destination.coordinates ||
+        isNaN(source.coordinates.lat) || isNaN(source.coordinates.lng) ||
+        isNaN(destination.coordinates.lat) || isNaN(destination.coordinates.lng)) {
+      console.error('Invalid source or destination coordinates');
+      // Return mock routes for graceful degradation
+      const mockRoutes = [
+        createMockRoute(source, destination, 'route-0', travelMode),
+        createMockRoute(source, destination, 'route-1', travelMode)
+      ];
+      // Start Gemini analysis for the mock routes
+      analyzeAllRoutes(mockRoutes);
+      return mockRoutes;
+    }
+    
+    // Calculate distance between source and destination
+    const distance = calculateDistance(
+      source.coordinates.lat, source.coordinates.lng,
+      destination.coordinates.lat, destination.coordinates.lng
+    );
+    
+    // Check if distance is too far for walking or bicycling (more than 30km)
+    if ((travelMode === TravelMode.WALK || travelMode === TravelMode.BICYCLE) && distance > 30000) {
+      console.warn(`Distance of ${Math.round(distance/1000)}km is too far for ${travelMode} mode. Using mock routes.`);
+      // Return mock routes for walking/bicycling when distance is too far
+      const mockRoutes = [
+        createMockRoute(source, destination, 'route-0', travelMode),
+        createMockRoute(source, destination, 'route-1', travelMode)
+      ];
+      // Start Gemini analysis for the mock routes
+      analyzeAllRoutes(mockRoutes);
+      return mockRoutes;
+    }
+    
+    // Create base request body
+    interface RequestBody {
+      origin: {
+        location: {
+          latLng: {
+            latitude: number;
+            longitude: number;
+          }
+        }
+      };
+      destination: {
+        location: {
+          latLng: {
+            latitude: number;
+            longitude: number;
+          }
+        }
+      };
+      travelMode: string;
+      computeAlternativeRoutes: boolean;
+      languageCode: string;
+      units: string;
+      routingPreference?: string;
+      transitPreferences?: {
+        routingPreference: string;
+        allowedTravelModes?: string[];
+      };
+      routeModifiers?: {
+        avoidHighways?: boolean;
+        avoidTolls?: boolean;
+      };
+    }
+    
+    const requestBody: RequestBody = {
         origin: {
           location: {
             latLng: {
@@ -118,155 +338,219 @@ export const computeRoutes = async (
             }
           }
         },
-        travelMode: "DRIVE",
-        routingPreference: "TRAFFIC_AWARE",
-        computeAlternativeRoutes: true,
+      travelMode: travelMode,
+      computeAlternativeRoutes: computeAlternativeRoutes,
         languageCode: "en-US",
-        units: "IMPERIAL",
-      }),
+      units: "IMPERIAL"
+    };
+    
+    // Add mode-specific parameters if defined
+    if (routingPreference) {
+      requestBody.routingPreference = routingPreference;
+    }
+    
+    if (Object.keys(routeModifiers).length > 0) {
+      requestBody.routeModifiers = routeModifiers;
+    }
+    
+    if (transitPreferences && travelMode === TravelMode.TRANSIT) {
+      requestBody.transitPreferences = transitPreferences;
+    }
+    
+    console.log("Routes API request:", JSON.stringify(requestBody, null, 2));
+    
+    // Make API request to compute routes
+    const response = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': API_KEY,
+        'X-Goog-FieldMask': fieldMask,
+      },
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {
+      console.error(`Routes API error: ${response.status}`);
+      console.error('Request that caused error:', JSON.stringify(requestBody, null, 2));
+      
+      // Try to get more details from the error response
+      try {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+      } catch (textError) {
+        console.error('Could not get error response text');
+      }
+      
       throw new Error(`Routes API error: ${response.status}`);
     }
 
     const data: ComputeRoutesResponse = await response.json();
     
     // Log routes received to help with debugging
-    console.log(`Received ${data.routes?.length || 0} routes from API`);
+    console.log(`Received ${data.routes?.length || 0} routes from API for ${travelMode} mode`);
     
     // Check if routes data exists
     if (!data || !data.routes || !Array.isArray(data.routes) || data.routes.length === 0) {
       console.error('No routes returned from API');
       // Return two mock routes for testing
       return [
-        createMockRoute(source, destination, 'route-0'),
-        createMockRoute(source, destination, 'route-1')
+        createMockRoute(source, destination, 'route-0', travelMode),
+        createMockRoute(source, destination, 'route-1', travelMode)
       ];
     }
 
-    // If we didn't get at least 2 routes, try a second API call with different routing preferences
-    if (data.routes.length < 2) {
-      console.log('Only one route returned, trying with avoid highways option');
+    // For transit mode, validate transit details
+    if (travelMode === TravelMode.TRANSIT) {
+      console.log('Checking for transit details in the routes...');
+      let hasTransitDetails = false;
       
-      // Try a second API call with avoid highways option
-      try {
-        const alternativeResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': API_KEY,
-            'X-Goog-FieldMask': 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels',
-          },
-          body: JSON.stringify({
-            origin: {
-              location: {
-                latLng: {
-                  latitude: source.coordinates.lat,
-                  longitude: source.coordinates.lng,
+      // Check if the route has transit details
+      for (const route of data.routes) {
+        if (route.legs && route.legs.length > 0) {
+          for (const leg of route.legs) {
+            if (leg.steps && leg.steps.length > 0) {
+              for (const step of leg.steps) {
+                if (step.travelMode === 'TRANSIT' && step.transitDetails) {
+                  hasTransitDetails = true;
+                  break;
                 }
               }
-            },
-            destination: {
-              location: {
-                latLng: {
-                  latitude: destination.coordinates.lat,
-                  longitude: destination.coordinates.lng,
-                }
-              }
-            },
-            travelMode: "DRIVE",
-            routingPreference: "TRAFFIC_AWARE",
-            routeModifiers: {
-              avoidTolls: false,
-              avoidHighways: true,
-              avoidFerries: false,
-            },
-            languageCode: "en-US",
-            units: "IMPERIAL",
-          }),
-        });
-        
-        if (alternativeResponse.ok) {
-          const alternativeData: ComputeRoutesResponse = await alternativeResponse.json();
-          if (alternativeData && alternativeData.routes && alternativeData.routes.length > 0) {
-            // Add the alternative route to our routes array
-            data.routes.push(alternativeData.routes[0]);
+              if (hasTransitDetails) break;
+            }
           }
+          if (hasTransitDetails) break;
         }
-      } catch (err) {
-        console.error('Error fetching alternative route:', err);
       }
       
-      // If we still don't have 2 routes, try another approach with shortest distance
-      if (data.routes.length < 2) {
-        console.log('Still only one route, trying with shortest distance option');
+      // If no transit details found, log and retry with different preferences
+      if (!hasTransitDetails) {
+        console.log('No transit details found in the response. Retrying with different preferences...');
         
+        // Try with a different set of preferences
+        const alternativeTransitPreferences = {
+          routingPreference: "FEWER_TRANSFERS"
+        };
+        
+        requestBody.transitPreferences = alternativeTransitPreferences;
+        
+        // Try again with different preferences
         try {
-          const shortestResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+          const alternativeResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'X-Goog-Api-Key': API_KEY,
-              'X-Goog-FieldMask': 'routes.legs.steps.polyline,routes.legs.steps.distanceMeters,routes.legs.steps.staticDuration,routes.polyline,routes.distanceMeters,routes.duration,routes.routeLabels',
+              'X-Goog-FieldMask': fieldMask,
+            },
+            body: JSON.stringify(requestBody),
+          });
+          
+          if (alternativeResponse.ok) {
+            const alternativeData = await alternativeResponse.json();
+            if (alternativeData && alternativeData.routes && alternativeData.routes.length > 0) {
+              // Use this data instead
+              console.log('Successfully retrieved transit routes with FEWER_TRANSFERS preference');
+              data.routes = alternativeData.routes;
+            }
+          }
+        } catch (error) {
+          console.error('Error retrying with alternative transit preferences:', error);
+        }
+        
+        // If still no valid transit routes, use mock transit routes
+        let hasValidTransitDetails = false;
+        for (const route of data.routes) {
+          if (route.legs && route.legs.length > 0) {
+            for (const leg of route.legs) {
+              if (leg.steps && leg.steps.length > 0) {
+                for (const step of leg.steps) {
+                  if (step.travelMode === 'TRANSIT' && step.transitDetails) {
+                    hasValidTransitDetails = true;
+                    break;
+                  }
+                }
+                if (hasValidTransitDetails) break;
+              }
+            }
+            if (hasValidTransitDetails) break;
+          }
+        }
+        
+        if (!hasValidTransitDetails) {
+          return [
+            createMockRoute(source, destination, 'route-0', travelMode),
+            createMockRoute(source, destination, 'route-1', travelMode)
+          ];
+        }
+      }
+    }
+
+    // If we didn't get at least 2 routes and travel mode is not transit or walk
+    if (data.routes.length < 2 && ![TravelMode.TRANSIT, TravelMode.WALK].includes(travelMode)) {
+      console.log(`Only one route returned for ${travelMode}, trying with avoid highways option`);
+      
+      // For DRIVE mode, try with avoid highways
+      if (travelMode === TravelMode.DRIVE) {
+        try {
+          const alternativeResponse = await fetch('https://routes.googleapis.com/directions/v2:computeRoutes', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': API_KEY,
+              'X-Goog-FieldMask': fieldMask,
             },
             body: JSON.stringify({
-              origin: {
-                location: {
-                  latLng: {
-                    latitude: source.coordinates.lat,
-                    longitude: source.coordinates.lng,
-                  }
-                }
-              },
-              destination: {
-                location: {
-                  latLng: {
-                    latitude: destination.coordinates.lat,
-                    longitude: destination.coordinates.lng,
-                  }
-                }
-              },
-              travelMode: "DRIVE",
-              routingPreference: "ROUTE_PREFERENCE_UNSPECIFIED", // Different preference
-              optimizeWaypointOrder: true,
-              languageCode: "en-US",
-              units: "IMPERIAL",
+              ...requestBody,
+              routeModifiers: {
+                avoidTolls: false,
+                avoidHighways: true,
+                avoidFerries: false,
+              }
             }),
           });
           
-          if (shortestResponse.ok) {
-            const shortestData: ComputeRoutesResponse = await shortestResponse.json();
-            if (shortestData && shortestData.routes && shortestData.routes.length > 0) {
-              // Add the shortest route to our routes array if it's different from existing route
-              if (!isSameRoute(data.routes[0], shortestData.routes[0])) {
-                data.routes.push(shortestData.routes[0]);
-              }
+          if (alternativeResponse.ok) {
+            const alternativeData: ComputeRoutesResponse = await alternativeResponse.json();
+            if (alternativeData && alternativeData.routes && alternativeData.routes.length > 0) {
+              // Add the alternative route to our routes array
+              data.routes.push(alternativeData.routes[0]);
             }
           }
         } catch (err) {
-          console.error('Error fetching shortest route:', err);
+          console.error('Error fetching alternative route:', err);
         }
       }
       
-      // If we still don't have at least 2 routes, create mock alternative routes
-      if (data.routes.length < 2) {
+      // If still don't have 2 routes and travel mode is not transit or walk, use mock alternative
+      if (data.routes.length < 2 && travelMode !== TravelMode.TRANSIT && travelMode !== TravelMode.WALK) {
         console.log('Creating mock alternative routes as fallback');
         // Create additional mock routes
         for (let i = data.routes.length; i < 2; i++) {
-          data.routes.push({
-            distanceMeters: Math.round(data.routes[0].distanceMeters * (1 + (i * 0.1))),
-            duration: `${Math.round(parseInt(data.routes[0].duration) * (1 + (i * 0.1)))}s`,
-            polyline: { encodedPolyline: '' },
-            legs: [],
-            routeLabels: ["DEFAULT_ROUTE_ALTERNATE"]
-          });
+          const mockRoute = createMockRoute(source, destination, `route-${i}`, travelMode);
+          if (data.routes[0].polyline) {
+            mockRoute.polyline = { 
+              encodedPolyline: data.routes[0].polyline.encodedPolyline 
+            };
+          }
+          if (data.routes[0].legs) {
+            mockRoute.legs = JSON.parse(JSON.stringify(data.routes[0].legs));
+          }
+          data.routes.push(mockRoute);
         }
       }
     }
     
-    // Limit to maximum 4 routes
-    if (data.routes.length > 4) {
+    // For walking mode, we accept single routes as valid
+    if (travelMode === TravelMode.WALK && data.routes.length === 0) {
+      console.error('No walking routes returned from API');
+      // Create a direct walking route as fallback
+      const directRoute = createDirectWalkingRoute(source, destination);
+      data.routes = [directRoute];
+    }
+    
+    // Limit to maximum 4 routes, except for walking mode which can have just 1
+    if (travelMode !== TravelMode.WALK && data.routes.length > 4) {
       data.routes = data.routes.slice(0, 4);
     }
     
@@ -281,8 +565,86 @@ export const computeRoutes = async (
     const routes = data.routes.map((route, index) => {
       // For mock routes without polyline data, create a mock route
       if (!route.polyline || !route.polyline.encodedPolyline) {
-        console.log(`Route ${index} is missing polyline data, creating mock route`);
-        return createMockRoute(source, destination, `route-${index}`);
+        console.error(`Route ${index} is missing polyline data, this should not happen for walking routes`);
+        // For walking routes, we should always have polyline data
+        if (travelMode === TravelMode.WALK) {
+          // Create a direct path between source and destination
+          const points = [
+            { lat: source.coordinates.lat, lng: source.coordinates.lng },
+            { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+          ];
+          const walkingRoute = createMockRoute(source, destination, `route-${index}`, travelMode);
+          const distanceMeters = calculateDistance(
+            source.coordinates.lat, source.coordinates.lng,
+            destination.coordinates.lat, destination.coordinates.lng
+          );
+          const duration = `${Math.round(distanceMeters / 1.4)}s`;
+          const distance = `${(distanceMeters / 1000).toFixed(1)} km`;
+          
+          // Create a walking step with required TransitStep properties
+          const walkingStep: TransitStep = {
+            type: 'WALK',
+            mode: 'WALKING',
+            duration: duration,
+            durationText: duration,
+            distance: distance,
+            polyline: encodePolyline(points),
+            departureStop: source.name,
+            arrivalStop: destination.name,
+            departureCoordinates: {
+              lat: source.coordinates.lat,
+              lng: source.coordinates.lng
+            },
+            arrivalCoordinates: {
+              lat: destination.coordinates.lat,
+              lng: destination.coordinates.lng
+            }
+          };
+          
+          // Create the route with all required properties
+          const routeData = {
+            distanceMeters: distanceMeters,
+            duration: duration,
+            polyline: {
+              encodedPolyline: encodePolyline(points)
+            },
+            legs: [{
+              steps: [{
+                polyline: {
+                  encodedPolyline: encodePolyline(points)
+                },
+                distanceMeters: distanceMeters,
+                staticDuration: duration,
+                travelMode: 'WALKING'
+              }],
+              startLocation: {
+                latLng: {
+                  latitude: source.coordinates.lat,
+                  longitude: source.coordinates.lng
+                }
+              },
+              endLocation: {
+                latLng: {
+                  latitude: destination.coordinates.lat,
+                  longitude: destination.coordinates.lng
+                }
+              }
+            }],
+            routeLabels: ["DEFAULT_ROUTE"]
+          };
+          
+          // Merge the route data with the mock route
+          walkingRoute.distanceMeters = routeData.distanceMeters;
+          walkingRoute.duration = routeData.duration;
+          walkingRoute.polyline = routeData.polyline;
+          walkingRoute.legs = routeData.legs;
+          walkingRoute.routeLabels = routeData.routeLabels;
+          walkingRoute.transitDetails = [walkingStep];
+          return walkingRoute;
+        } else {
+          console.log(`Route ${index} is missing polyline data, creating mock route`);
+          return createMockRoute(source, destination, `route-${index}`, travelMode);
+        }
       }
       
       // Decode the polyline to get the route path
@@ -311,6 +673,18 @@ export const computeRoutes = async (
       // Generate street view images for the route
       const { images: streetViewImages, locations: streetViewLocations } = fetchStreetViewImages(points);
       
+      // Extract transit details if available - enhanced extraction
+      const transitDetails = travelMode === TravelMode.TRANSIT ? 
+        extractEnhancedTransitDetails(route) : undefined;
+      
+      // Log transit details for debugging
+      if (travelMode === TravelMode.TRANSIT) {
+        console.log(`Transit details for route ${index}:`, transitDetails);
+        console.log('Route legs:', route.legs?.length);
+        console.log('Steps in first leg:', route.legs?.[0]?.steps?.length);
+        console.log('Travel modes in steps:', route.legs?.[0]?.steps?.map(s => s.travelMode).join(', '));
+      }
+      
       // Set the route's ID, using routeLabels if available to mark default vs alternative routes
       const isAlternative = route.routeLabels && 
                            route.routeLabels.includes("DEFAULT_ROUTE_ALTERNATE");
@@ -329,12 +703,16 @@ export const computeRoutes = async (
         path: generateSVGPath(points), // Create an SVG path for visualization
         streetViewImages,
         streetViewLocations,
-        // Initialize Gemini analysis with isAnalyzing: true
+        travelMode, // Add travel mode to route object
+        transitDetails, // Add transit details if available
+        // Initialize Gemini analysis with isAnalyzing: false
         geminiAnalysis: {
           riskScores: [],
           averageRiskScore: 0,
           isAnalyzing: false
-        }
+        },
+        // Add step polylines for visualizing different segments
+        stepPolylines: extractStepPolylines(route, travelMode)
       };
       
       // Add weather information if available
@@ -352,7 +730,7 @@ export const computeRoutes = async (
       return routeObject;
     });
 
-    // Start Gemini analysis for all routes asynchronously
+    // Start Gemini analysis for all routes asynchronously for any travel mode
     // We don't await this so routes are returned to the user immediately
     if (routes.length > 0) {
       analyzeAllRoutes(routes);
@@ -360,12 +738,19 @@ export const computeRoutes = async (
     
     return routes;
   } catch (error) {
-    console.error('Error computing routes:', error);
-    // Return two mock routes for better error recovery
-    return [
-      createMockRoute(source, destination, 'route-0'),
-      createMockRoute(source, destination, 'route-1')
+    console.error(`Error computing routes for ${travelMode}:`, error);
+    if (travelMode === TravelMode.WALK) {
+      // For walking mode, return a single direct route
+      return [createDirectWalkingRoute(source, destination)];
+    }
+    // For other modes, return two mock routes for better error recovery
+    const mockRoutes = [
+      createMockRoute(source, destination, 'route-0', travelMode),
+      createMockRoute(source, destination, 'route-1', travelMode)
     ];
+    // Start Gemini analysis for the mock routes too
+    analyzeAllRoutes(mockRoutes);
+    return mockRoutes;
   }
 };
 
@@ -374,8 +759,9 @@ export const computeRoutes = async (
  */
 const analyzeAllRoutes = async (routes: Route[]) => {
   try {
-    for (const route of routes) {
-      if (!route.streetViewImages || route.streetViewImages.length === 0) continue;
+    // Process routes in parallel with Promise.all
+    await Promise.all(routes.map(async (route) => {
+      if (!route.streetViewImages || route.streetViewImages.length === 0) return;
       
       // Update route to show it's being analyzed
       route.geminiAnalysis = {
@@ -387,8 +773,8 @@ const analyzeAllRoutes = async (routes: Route[]) => {
       // Dispatch an event to notify that analysis has started
       dispatchRouteAnalysisComplete(route);
       
+      try {
       // Use all street view images since they're now already optimally sampled
-      // We're already using the evenly distributed sampling in fetchStreetViewImages
       const imagesToAnalyze = route.streetViewImages;
       
       // Include weather information in the Gemini analysis prompt if available
@@ -412,7 +798,22 @@ const analyzeAllRoutes = async (routes: Route[]) => {
       
       // Dispatch an event to notify UI components about the completed analysis
       dispatchRouteAnalysisComplete(route);
+      } catch (analysisError) {
+        // Handle errors for individual route analysis
+        console.error(`Error analyzing route ${route.id}:`, analysisError);
+        
+        // Update route to show analysis failed
+        route.geminiAnalysis = {
+          riskScores: [],
+          averageRiskScore: 0,
+          isAnalyzing: false,
+          error: 'Analysis failed'
+        };
+        
+        // Dispatch event with failure state
+      dispatchRouteAnalysisComplete(route);
     }
+    }));
   } catch (error) {
     console.error('Error analyzing routes with Gemini:', error);
   }
@@ -586,11 +987,11 @@ export const fetchStreetViewImages = (
         streetViewLocations.forEach((location, idx) => {
           geocoder.geocode(
             { location: location.coordinates },
-            (results: any, status: any) => {
+            (results: google.maps.GeocoderResult[], status: google.maps.GeocoderStatus) => {
               if (status === 'OK' && results[0]) {
                 // Extract street name from address components
                 const addressComponents = results[0].address_components;
-                const route = addressComponents.find((component: any) => 
+                const route = addressComponents.find((component: google.maps.GeocoderAddressComponent) => 
                   component.types.includes('route')
                 );
                 
@@ -615,20 +1016,23 @@ export const fetchStreetViewImages = (
   return { images: streetViewImages, locations: streetViewLocations };
 };
 
-// Calculate the distance between two coordinates in meters using Haversine formula
-const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
-  const R = 6371e3; // Earth radius in meters
-  const φ1 = lat1 * Math.PI / 180;
-  const φ2 = lat2 * Math.PI / 180;
-  const Δφ = (lat2 - lat1) * Math.PI / 180;
-  const Δλ = (lng2 - lng1) * Math.PI / 180;
+// Helper function to calculate the distance between two geographical coordinates in meters
+const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const R = 6371000; // Earth's radius in meters
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const distance = R * c; // Distance in meters
+  return distance;
+};
 
-  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-            Math.cos(φ1) * Math.cos(φ2) *
-            Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c; // Distance in meters
+// Helper function to convert degrees to radians
+const deg2rad = (deg: number): number => {
+  return deg * (Math.PI/180);
 };
 
 // Calculate the heading (direction) between two points in degrees
@@ -701,7 +1105,7 @@ export const generateNavigationUrl = (route: Route): string => {
 };
 
 // Helper function to create a mock route when API fails
-const createMockRoute = (source: Location, destination: Location, id = 'route-fallback'): Route => {
+const createMockRoute = (source: Location, destination: Location, id = 'route-fallback', travelMode: TravelMode): Route => {
   // Extract route number from ID if exists
   const routeNumber = id.includes('-') ? parseInt(id.split('-')[1]) || 0 : 0;
   
@@ -723,12 +1127,12 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
   if (routeNumber === 0) {
     // First route - mostly direct with slight curve
     waypoints.push(
-      { lat: source.coordinates.lat, lng: source.coordinates.lng },
+    { lat: source.coordinates.lat, lng: source.coordinates.lng },
       { 
         lat: midLat + perpLat * 0.01, 
         lng: midLng + perpLng * 0.01 
       },
-      { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+    { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
     );
   } else if (routeNumber === 1) {
     // Second route - different path
@@ -745,7 +1149,7 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
     const deviation = (routeNumber % 2 === 0) ? 0.03 : -0.03;
     
     waypoints.push(
-      { lat: source.coordinates.lat, lng: source.coordinates.lng },
+    { lat: source.coordinates.lat, lng: source.coordinates.lng },
       { 
         lat: midLat * 0.7 + source.coordinates.lat * 0.3 + perpLat * deviation * 0.5, 
         lng: midLng * 0.7 + source.coordinates.lng * 0.3 + perpLng * deviation * 0.5 
@@ -758,7 +1162,7 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
         lat: midLat * 0.3 + destination.coordinates.lat * 0.7 + perpLat * deviation * 0.5, 
         lng: midLng * 0.3 + destination.coordinates.lng * 0.7 + perpLng * deviation * 0.5 
       },
-      { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+    { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
     );
   }
   
@@ -804,6 +1208,9 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
   // Different risk score based on route number
   const riskScore = routeNumber === 0 ? 3 : routeNumber === 1 ? 6 : 8;
   
+  // Create mock transit details if the travel mode is TRANSIT
+  const transitDetails = travelMode === TravelMode.TRANSIT ? createMockTransitDetails(source, destination, routeNumber, durationInSeconds) : undefined;
+  
   return {
     id,
     source,
@@ -816,12 +1223,128 @@ const createMockRoute = (source: Location, destination: Location, id = 'route-fa
     path: generateSVGPath(points),
     streetViewImages,
     streetViewLocations,
+    travelMode,
+    transitDetails, // Add transit details to the route
     geminiAnalysis: {
       riskScores: [],
       averageRiskScore: 0,
       isAnalyzing: false
     }
   };
+};
+
+// Helper function to create mock transit details
+const createMockTransitDetails = (source: Location, destination: Location, routeNumber: number, totalDurationSec: number): TransitStep[] => {
+  const transitSteps: TransitStep[] = [];
+  
+  // For simplicity, create a 3-step journey: Walk to stop, Transit, Walk to destination
+  const walkToStopDuration = Math.round(totalDurationSec * 0.15); // 15% of total time
+  const transitDuration = Math.round(totalDurationSec * 0.7); // 70% of total time
+  const walkToDestDuration = Math.round(totalDurationSec * 0.15); // 15% of total time
+  
+  // Add walking step to transit stop (consolidated)
+  transitSteps.push({
+    type: 'WALK',
+    duration: `${walkToStopDuration}s`,
+    durationText: formatDuration(walkToStopDuration),
+    distance: formatDistance(300) // Assume 300m walk to stop
+  });
+  
+  // Create different transit options based on route number
+  if (routeNumber === 0) {
+    // First route: Bus
+    const busNumber = "500A";
+    const departureStop = "Central Station";
+    const arrivalStop = "Market Square";
+    
+    // Create departure and arrival times
+    const now = new Date();
+    const departureTime = new Date(now.getTime() + 300000); // 5 minutes from now
+    const arrivalTime = new Date(departureTime.getTime() + transitDuration * 1000);
+    
+    transitSteps.push({
+      type: 'TRANSIT',
+      mode: 'bus',
+      line: busNumber,
+      headsign: "Downtown",
+      departureStop,
+      arrivalStop,
+      departureTime: departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      arrivalTime: arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      numStops: 5,
+      agency: "Metro Transit",
+      color: '#1A73E8',
+      vehicle: 'Bus',
+      duration: `${transitDuration}s`,
+      durationText: formatDuration(transitDuration),
+      distance: formatDistance(3000) // 3km transit ride
+    });
+  } else if (routeNumber === 1) {
+    // Second route: Subway
+    const subwayLine = "Blue Line";
+    
+    // Create departure and arrival times
+    const now = new Date();
+    const departureTime = new Date(now.getTime() + 420000); // 7 minutes from now
+    const arrivalTime = new Date(departureTime.getTime() + transitDuration * 1000);
+    
+    // Add subway segment
+    transitSteps.push({
+      type: 'TRANSIT',
+      mode: 'subway',
+      line: subwayLine,
+      headsign: "Westbound",
+      departureStop: "North Terminal",
+      arrivalStop: "City Center",
+      departureTime: departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      arrivalTime: arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      numStops: 3,
+      agency: "Metro Transit",
+      color: '#0000FF',
+      vehicle: 'Subway',
+      duration: `${transitDuration}s`,
+      durationText: formatDuration(transitDuration),
+      distance: formatDistance(2000) // 2km subway ride
+    });
+  } else {
+    // Other routes: Train
+    const trainNumber = `${100 + routeNumber * 50}X`;
+    const departureStop = "East Junction";
+    const arrivalStop = "West End";
+    
+    // Create departure and arrival times
+    const now = new Date();
+    const departureTime = new Date(now.getTime() + 600000); // 10 minutes from now
+    const arrivalTime = new Date(departureTime.getTime() + transitDuration * 1000);
+    
+    transitSteps.push({
+      type: 'TRANSIT',
+      mode: 'train',
+      line: trainNumber,
+      headsign: "Shopping Mall",
+      departureStop,
+      arrivalStop,
+      departureTime: departureTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      arrivalTime: arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      numStops: 7,
+      agency: "Metro Rail",
+      color: '#188038',
+      vehicle: 'Train',
+      duration: `${transitDuration}s`,
+      durationText: formatDuration(transitDuration),
+      distance: formatDistance(4000) // 4km train ride
+    });
+  }
+  
+  // Add walking step to final destination (consolidated)
+  transitSteps.push({
+    type: 'WALK',
+    duration: `${walkToDestDuration}s`,
+    durationText: formatDuration(walkToDestDuration),
+    distance: formatDistance(400) // Assume 400m walk to destination
+  });
+  
+  return transitSteps;
 };
 
 // Helper function to generate a smooth path between waypoints
@@ -914,4 +1437,292 @@ const isSameRoute = (route1: ComputeRoutesResponse['routes'][0], route2: Compute
   const durationDiff = Math.abs(duration1 - duration2) / duration1;
   
   return distanceDiff < distanceTolerance && durationDiff < distanceTolerance;
+};
+
+// Enhanced function to extract polylines for each step to visualize different travel modes
+const extractStepPolylines = (route: ComputeRoutesResponse['routes'][0], travelMode: TravelMode) => {
+  if (!route.legs || route.legs.length === 0) {
+    return [];
+  }
+  
+  const stepPolylines = [];
+  
+  for (const leg of route.legs) {
+    if (!leg.steps || leg.steps.length === 0) continue;
+    
+    for (const step of leg.steps) {
+      if (!step.polyline || !step.polyline.encodedPolyline) continue;
+      
+      const points = decodePolyline(step.polyline.encodedPolyline);
+      
+      // Ensure walking segments are properly identified
+      // The Google Routes API returns 'WALKING' for walking segments
+      const stepTravelMode = step.travelMode || travelMode;
+      const isWalking = stepTravelMode === 'WALKING' || stepTravelMode === TravelMode.WALK;
+      
+      stepPolylines.push({
+        points,
+        travelMode: isWalking ? 'WALKING' : stepTravelMode,
+        distanceMeters: step.distanceMeters || 0,
+        duration: step.staticDuration || '0s'
+      });
+    }
+  }
+  
+  return stepPolylines;
+};
+
+// Enhanced transit details extraction for better public transport information
+const extractEnhancedTransitDetails = (route: ComputeRoutesResponse['routes'][0]): TransitStep[] => {
+  const transitSteps: TransitStep[] = [];
+  
+  if (!route.legs || route.legs.length === 0) {
+    return transitSteps;
+  }
+  
+  // Track walking segments to consolidate them
+  let currentWalkStep: TransitStep | null = null;
+  let totalWalkDistance = 0;
+  let totalWalkDuration = 0;
+  
+  // Iterate through all legs and steps to find transit steps
+  route.legs.forEach(leg => {
+    if (!leg.steps || leg.steps.length === 0) return;
+    
+    leg.steps.forEach(step => {
+      if (step.travelMode === 'TRANSIT' && step.transitDetails) {
+        // If we were accumulating a walking step, add it now
+        if (currentWalkStep) {
+          currentWalkStep.distance = formatDistance(totalWalkDistance);
+          currentWalkStep.duration = `${totalWalkDuration}s`;
+          currentWalkStep.durationText = formatDuration(totalWalkDuration);
+          transitSteps.push(currentWalkStep);
+          currentWalkStep = null;
+          totalWalkDistance = 0;
+          totalWalkDuration = 0;
+        }
+        
+        // Get transit details or use fallback values
+        const transitDetails = step.transitDetails;
+        
+        // Check if we have stop details
+        const hasValidStopDetails = transitDetails.stopDetails && 
+                                   transitDetails.stopDetails.departureStop && 
+                                   transitDetails.stopDetails.arrivalStop;
+        
+        // Get line information - prioritize shortName for bus numbers
+        const lineInfo = transitDetails.line || {};
+        const lineNumber = lineInfo.shortName || '';
+        const lineName = lineInfo.name || 'Transit Line';
+        const lineColor = lineInfo.color || '#1A73E8';
+        
+        // Create transit step with fallbacks for missing data
+        const transitStep: TransitStep = {
+          type: 'TRANSIT',
+          mode: transitDetails.line?.vehicle?.type?.toLowerCase() || 'transit',
+          line: lineNumber || lineName,
+          headsign: transitDetails.headsign || '',
+          departureStop: hasValidStopDetails ? transitDetails.stopDetails.departureStop.name : 'Departure Stop',
+          arrivalStop: hasValidStopDetails ? transitDetails.stopDetails.arrivalStop.name : 'Arrival Stop',
+          departureTime: hasValidStopDetails ? formatTransitTime(transitDetails.stopDetails.departureTime) : '',
+          arrivalTime: hasValidStopDetails ? formatTransitTime(transitDetails.stopDetails.arrivalTime) : '',
+          numStops: transitDetails.numStops || 0,
+          agency: transitDetails.line?.agencies?.[0]?.name || '',
+          color: lineColor,
+          textColor: lineInfo.textColor || '#FFFFFF',
+          vehicle: transitDetails.line?.vehicle?.name || 'Transit',
+          iconUri: transitDetails.line?.vehicle?.iconUri || '',
+          duration: step.staticDuration,
+          durationText: formatDuration(parseInt(step.staticDuration.replace('s', ''))),
+          distance: formatDistance(step.distanceMeters),
+          polyline: step.polyline?.encodedPolyline || '',
+          // Add coordinates for visualization if available
+          departureCoordinates: hasValidStopDetails && transitDetails.stopDetails.departureStop.location ? {
+            lat: transitDetails.stopDetails.departureStop.location.latLng.latitude,
+            lng: transitDetails.stopDetails.departureStop.location.latLng.longitude
+          } : undefined,
+          arrivalCoordinates: hasValidStopDetails && transitDetails.stopDetails.arrivalStop.location ? {
+            lat: transitDetails.stopDetails.arrivalStop.location.latLng.latitude,
+            lng: transitDetails.stopDetails.arrivalStop.location.latLng.longitude
+          } : undefined
+        };
+        
+        transitSteps.push(transitStep);
+      } else if (step.travelMode === 'WALKING') {
+        // For walking steps, consolidate them
+        if (!currentWalkStep) {
+          currentWalkStep = {
+            type: 'WALK',
+            duration: step.staticDuration,
+            durationText: formatDuration(parseInt(step.staticDuration.replace('s', ''))),
+            distance: formatDistance(step.distanceMeters),
+            polyline: step.polyline?.encodedPolyline || ''
+          };
+          totalWalkDistance = step.distanceMeters;
+          totalWalkDuration = parseInt(step.staticDuration.replace('s', ''));
+        } else {
+          // Add to existing walk step
+          totalWalkDistance += step.distanceMeters;
+          totalWalkDuration += parseInt(step.staticDuration.replace('s', ''));
+          // Concatenate polylines if available
+          if (step.polyline?.encodedPolyline && currentWalkStep.polyline) {
+            // In a real app, we'd need to properly join polylines, but for now just store both
+            currentWalkStep.polyline += `;${step.polyline.encodedPolyline}`;
+          }
+        }
+      } else if (step.travelMode) {
+        // For other modes (not transit or walking)
+        // If we were accumulating a walking step, add it now
+        if (currentWalkStep) {
+          currentWalkStep.distance = formatDistance(totalWalkDistance);
+          currentWalkStep.duration = `${totalWalkDuration}s`;
+          currentWalkStep.durationText = formatDuration(totalWalkDuration);
+          transitSteps.push(currentWalkStep);
+          currentWalkStep = null;
+          totalWalkDistance = 0;
+          totalWalkDuration = 0;
+        }
+        
+        // Add the other mode step
+        transitSteps.push({
+          type: step.travelMode,
+          duration: step.staticDuration,
+          durationText: formatDuration(parseInt(step.staticDuration.replace('s', ''))),
+          distance: formatDistance(step.distanceMeters),
+          polyline: step.polyline?.encodedPolyline || ''
+        });
+      }
+    });
+  });
+  
+  // Add any remaining walk step
+  if (currentWalkStep) {
+    currentWalkStep.distance = formatDistance(totalWalkDistance);
+    currentWalkStep.duration = `${totalWalkDuration}s`;
+    currentWalkStep.durationText = formatDuration(totalWalkDuration);
+    transitSteps.push(currentWalkStep);
+  }
+  
+  return transitSteps;
+};
+
+// Format transit time from API format to readable format
+const formatTransitTime = (timeString: string): string => {
+  if (!timeString) return '';
+  
+  try {
+    // Expected format: "2023-05-15T15:30:00Z"
+    const date = new Date(timeString);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  } catch (error) {
+    console.error('Error formatting transit time:', error);
+    return timeString;
+  }
+};
+
+// Helper function to create a direct walking route between two points
+const createDirectWalkingRoute = (source: Location, destination: Location): Route => {
+  // Calculate direct path points
+  const points = [
+    { lat: source.coordinates.lat, lng: source.coordinates.lng },
+    { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+  ];
+
+  // Calculate distance and duration
+  const distanceMeters = calculateDistance(
+    source.coordinates.lat, source.coordinates.lng,
+    destination.coordinates.lat, destination.coordinates.lng
+  );
+
+  // Estimate walking duration (assuming average walking speed of 5 km/h or ~1.4 m/s)
+  const durationInSeconds = Math.round(distanceMeters / 1.4);
+  const duration = `${durationInSeconds}s`;
+  const distance = `${(distanceMeters / 1000).toFixed(1)} km`;
+
+  // Create walking step
+  const walkingStep: TransitStep = {
+    type: 'WALK',
+    mode: 'WALKING',
+    duration: duration,
+    durationText: formatDuration(durationInSeconds),
+    distance: distance,
+    polyline: encodePolyline(points),
+    departureCoordinates: {
+      lat: source.coordinates.lat,
+      lng: source.coordinates.lng
+    },
+    arrivalCoordinates: {
+      lat: destination.coordinates.lat,
+      lng: destination.coordinates.lng
+    }
+  };
+
+  // Create route points with estimated risk scores
+  const routePoints: RoutePoint[] = points.map((point, idx) => ({
+    coordinates: point,
+    riskScore: 2, // Default moderate risk score for walking
+    position: {
+      x: `${idx}`,
+      y: `${idx}`,
+    },
+  }));
+
+  // Get street view images and locations
+  const { images: streetViewImages, locations: streetViewLocations } = fetchStreetViewImages(points);
+
+  // Create the complete route object
+  const route: Route = {
+    id: 'route-walk-direct',
+    source,
+    destination,
+    points: routePoints,
+    riskScore: 2, // Default moderate risk score
+    distance: formatDistance(distanceMeters),
+    duration: formatDuration(durationInSeconds),
+    riskAreas: [],
+    path: generateSVGPath(points),
+    streetViewImages,
+    streetViewLocations,
+    travelMode: TravelMode.WALK,
+    transitDetails: [walkingStep],
+    geminiAnalysis: {
+      riskScores: [],
+      averageRiskScore: 0,
+      isAnalyzing: false
+    },
+    distanceMeters,
+    polyline: {
+      encodedPolyline: encodePolyline(points)
+    },
+    legs: [{
+      steps: [{
+        polyline: {
+          encodedPolyline: encodePolyline(points)
+        },
+        distanceMeters,
+        staticDuration: duration,
+        travelMode: 'WALKING'
+      }],
+      startLocation: {
+        latLng: {
+          latitude: source.coordinates.lat,
+          longitude: source.coordinates.lng
+        }
+      },
+      endLocation: {
+        latLng: {
+          latitude: destination.coordinates.lat,
+          longitude: destination.coordinates.lng
+        }
+      }
+    }],
+    stepPolylines: [{
+      points,
+      travelMode: 'WALKING',
+      distanceMeters,
+      duration
+    }]
+  };
+
+  return route;
 }; 

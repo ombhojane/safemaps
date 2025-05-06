@@ -1,4 +1,3 @@
-
 import { Route, RiskLevel } from "@/types";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -30,76 +29,44 @@ const RouteCard = ({ route, isSelected, onSelect }: RouteCardProps) => {
       className={cn(
         "relative overflow-hidden transition-all duration-300",
         isSelected 
-          ? "border-primary shadow-lg" 
-          : "hover:border-primary/50 hover:shadow-md cursor-pointer",
+          ? "border-primary shadow-md" 
+          : "hover:border-primary/50 hover:shadow-sm cursor-pointer",
       )}
       onClick={() => onSelect(route)}
     >
       {isSelected && (
-        <div className="absolute top-0 left-0 w-full h-1 bg-primary animate-pulse-slow" />
+        <div className="absolute top-0 left-0 w-full h-1 bg-primary" />
       )}
       
-      <CardContent className="p-5">
-        <div className="flex flex-col space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className={cn(
-                "w-10 h-10 rounded-full flex items-center justify-center",
-                level === "low" ? "bg-risk-low/20" : 
-                level === "medium" ? "bg-risk-medium/20" : 
-                "bg-risk-high/20"
-              )}>
-                <AlertTriangle className={cn("w-5 h-5", color)} />
-              </div>
-              <div>
-                <h3 className="font-medium">Route {route.id.split('-')[1]}</h3>
-                <div className="flex items-center">
-                  <span className={cn("text-sm font-semibold", color)}>
-                    {level.charAt(0).toUpperCase() + level.slice(1)} Risk
-                  </span>
-                  <span className="mx-2 text-muted-foreground">•</span>
-                  <span className="text-sm text-muted-foreground">
-                    Score: {route.riskScore.toFixed(1)}/10
-                  </span>
-                </div>
-              </div>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between">
+          {/* Time and Distance */}
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2 text-sm">
+              <Clock className="w-4 h-4 text-muted-foreground" />
+              <span className="font-medium">{route.duration}</span>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div className="flex items-center space-x-2 text-muted-foreground">
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
               <RouteIcon className="w-4 h-4" />
               <span>{route.distance}</span>
             </div>
-            <div className="flex items-center space-x-2 text-muted-foreground">
-              <Clock className="w-4 h-4" />
-              <span>{route.duration}</span>
-            </div>
           </div>
 
-          <div className="flex justify-between items-center pt-2">
-            <div className="flex">
-              {route.riskAreas.slice(0, 3).map((area, i) => (
-                <div
-                  key={area.id}
-                  className={cn(
-                    "w-3 h-3 rounded-full border border-background -mr-1",
-                    area.riskLevel === "low" ? "bg-risk-low" :
-                    area.riskLevel === "medium" ? "bg-risk-medium" : "bg-risk-high"
-                  )}
-                  style={{ zIndex: 3 - i }}
-                ></div>
-              ))}
-              {route.riskAreas.length > 3 && (
-                <div className="ml-2 text-xs text-muted-foreground">
-                  +{route.riskAreas.length - 3} more
-                </div>
-              )}
+          {/* Risk Score */}
+          <div className="flex items-center space-x-2">
+            <div className={cn(
+              "px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1",
+              level === "low" ? "bg-risk-low/10 text-risk-low" : 
+              level === "medium" ? "bg-risk-medium/10 text-risk-medium" : 
+              "bg-risk-high/10 text-risk-high"
+            )}>
+              <AlertTriangle className="w-3 h-3" />
+              <span>Risk: {route.riskScore.toFixed(1)}</span>
             </div>
-            
             <Button 
-              variant={isSelected ? "secondary" : "outline"} 
+              variant={isSelected ? "secondary" : "ghost"} 
               size="sm"
+              className="ml-2"
               onClick={(e) => {
                 e.stopPropagation();
                 onSelect(route);
@@ -109,6 +76,20 @@ const RouteCard = ({ route, isSelected, onSelect }: RouteCardProps) => {
             </Button>
           </div>
         </div>
+
+        {/* Weather Info */}
+        {route.weather && (
+          <div className="mt-3 flex items-center space-x-2 text-xs text-muted-foreground">
+            <img 
+              src={`https://openweathermap.org/img/w/${route.weather.icon}.png`} 
+              alt={route.weather.condition}
+              className="w-4 h-4"
+            />
+            <span>{route.weather.temperature}°C</span>
+            <span>•</span>
+            <span>{route.weather.condition}</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
