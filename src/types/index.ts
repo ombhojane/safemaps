@@ -169,8 +169,8 @@ export interface StreetViewLocation {
   // Add accident hotspot data
   accidentHotspot?: {
     hasAccidentHistory: boolean;
-    accidentFrequency: 'low' | 'moderate' | 'high' | 'very_high' | 'unknown';
-    accidentSeverity: 'minor' | 'moderate' | 'severe' | 'fatal' | 'unknown';
+    accidentFrequency: 'none' | 'low' | 'moderate' | 'high' | 'very_high' | 'unknown';
+    accidentSeverity: 'none' | 'minor' | 'moderate' | 'severe' | 'fatal' | 'unknown';
     analysisText: string;
     riskFactors: string[];
     suggestedPrecautions: string[];

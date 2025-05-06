@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
-import { ArrowLeft, ArrowRight, MapPin, BarChart, AlertCircle, Lightbulb, MapPinIcon } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { ArrowLeft, ArrowRight, MapPin, AlertCircle, MapPinIcon, BarChart, Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { analyzeStreetViewImages, calculateAverageRiskScore } from "@/services/geminiService";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StreetViewLocation } from "@/types";
+import { ACCIDENT_HOTSPOT_UPDATE_EVENT } from "@/services/accidentHotspotsService";
 
 interface StreetViewGalleryProps {
   images: string[];
@@ -21,6 +22,7 @@ interface StreetViewGalleryProps {
   locations?: StreetViewLocation[];
   onImageClick?: (location: StreetViewLocation) => void;
   currentlyViewedLocationIndex?: number;
+  selectedLocationIndex?: number;
 }
 
 const StreetViewGallery = ({ 
@@ -30,13 +32,16 @@ const StreetViewGallery = ({
   geminiAnalysis,
   locations = [],
   onImageClick,
-  currentlyViewedLocationIndex
+  currentlyViewedLocationIndex,
+  selectedLocationIndex
 }: StreetViewGalleryProps) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [viewingOnMap, setViewingOnMap] = useState(false);
   const [selectedForViewing, setSelectedForViewing] = useState<StreetViewLocation | null>(null);
+  const [showAllImages, setShowAllImages] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Set the current index to match the currently viewed location when it changes
   useEffect(() => {
@@ -73,6 +78,48 @@ const StreetViewGallery = ({
 
     return () => clearInterval(interval);
   }, [isAnalyzing, geminiAnalysis?.isAnalyzing]);
+
+  // Scroll to the selected image in the thumbnail view
+  useEffect(() => {
+    if (showAllImages && scrollRef.current) {
+      const selectedElement = scrollRef.current.querySelector(`[data-index="${currentIndex}"]`);
+      if (selectedElement) {
+        selectedElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+  }, [currentIndex, showAllImages]);
+  
+  // Listen for accident hotspot updates
+  useEffect(() => {
+    const handleAccidentHotspotUpdate = (event: CustomEvent) => {
+      const { locationIndex, routeId, accidentHotspotData } = event.detail;
+      
+      // Check if this update is for one of our locations
+      if (locations && locations[locationIndex]) {
+        // Update the accident hotspot data in our local state
+        const updatedLocations = [...locations];
+        updatedLocations[locationIndex].accidentHotspot = accidentHotspotData;
+        
+        // Force a re-render
+        // Since we can't directly modify the locations prop, we'll rely on the parent
+        // component to update when the route is updated
+      }
+    };
+    
+    // Add event listener
+    window.addEventListener(
+      ACCIDENT_HOTSPOT_UPDATE_EVENT, 
+      handleAccidentHotspotUpdate as EventListener
+    );
+    
+    // Remove event listener on cleanup
+    return () => {
+      window.removeEventListener(
+        ACCIDENT_HOTSPOT_UPDATE_EVENT, 
+        handleAccidentHotspotUpdate as EventListener
+      );
+    };
+  }, [locations]);
 
   // No images to display
   if (!images || images.length === 0) {
