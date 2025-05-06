@@ -916,3 +916,380 @@ export const fetchStreetViewImages = async (
     return { images: [], locations: [] };
   }
 };
+
+// Function to calculate heading between two points
+export function calculateHeading(
+  point1: { lat: number; lng: number } | number,
+  point2: { lat: number; lng: number } | number,
+  lng1?: number,
+  lng2?: number
+): number {
+  // Handle both object and coordinate formats
+  let lat1, lon1, lat2, lon2;
+  
+  if (typeof point1 === 'object' && point1 !== null) {
+    lat1 = point1.lat;
+    lon1 = point1.lng;
+    lat2 = (point2 as { lat: number; lng: number }).lat;
+    lon2 = (point2 as { lat: number; lng: number }).lng;
+  } else {
+    lat1 = point1 as number;
+    lon1 = lng1 as number;
+    lat2 = point2 as number;
+    lon2 = lng2 as number;
+  }
+  
+  lat1 = (lat1 * Math.PI) / 180;
+  lon1 = (lon1 * Math.PI) / 180;
+  lat2 = (lat2 * Math.PI) / 180;
+  lon2 = (lon2 * Math.PI) / 180;
+  
+  const dLon = lon2 - lon1;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  let heading = Math.atan2(y, x) * (180 / Math.PI);
+  heading = (heading + 360) % 360; // Normalize to 0-360
+  
+  return heading;
+}
+
+// Function to sample route points at specified intervals
+export function sampleRoutePoints(
+  points: { lat: number; lng: number }[],
+  intervalMeters: number = 300
+): { lat: number; lng: number }[] {
+  if (!points || points.length < 2) return points;
+  
+  const sampledPoints: { lat: number; lng: number }[] = [];
+  sampledPoints.push(points[0]); // Always include the start point
+  
+  let accumulatedDistance = 0;
+  let lastSampledPoint = points[0];
+  
+  for (let i = 1; i < points.length; i++) {
+    const currentPoint = points[i];
+    const segmentDistance = calculateDistanceBetweenPoints(
+      lastSampledPoint.lat, lastSampledPoint.lng,
+      currentPoint.lat, currentPoint.lng
+    );
+    
+    accumulatedDistance += segmentDistance;
+    
+    if (accumulatedDistance >= intervalMeters) {
+      sampledPoints.push(currentPoint);
+      lastSampledPoint = currentPoint;
+      accumulatedDistance = 0;
+    }
+  }
+  
+  // Always include the end point
+  if (sampledPoints[sampledPoints.length - 1] !== points[points.length - 1]) {
+    sampledPoints.push(points[points.length - 1]);
+  }
+  
+  return sampledPoints;
+}
+
+// Function to calculate distance between two points
+export function calculateDistanceBetweenPoints(
+  lat1: number, 
+  lng1: number, 
+  lat2: number, 
+  lng2: number
+): number {
+  const R = 6371000; // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lng2 - lng1) * Math.PI) / 180;
+  
+  const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+           Math.cos(φ1) * Math.cos(φ2) * 
+           Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  
+  return R * c; // Distance in meters
+}
+
+// Function to get location information from coordinates
+export async function getLocationInfo(
+  lat: number, 
+  lng: number
+): Promise<{ streetName: string; formattedAddress: string } | null> {
+  try {
+    // Use Google Maps Geocoding API
+    const response = await fetch(
+      `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${API_KEY}`
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Geocoding API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (!data.results || data.results.length === 0) {
+      return { streetName: 'Unknown Street', formattedAddress: '' };
+    }
+    
+    // Extract street name from address components
+    let streetName = 'Unknown Street';
+    const formattedAddress = data.results[0].formatted_address || '';
+    
+    if (data.results[0].address_components) {
+      const routeComponent = data.results[0].address_components.find(
+        (component: any) => component.types.includes('route')
+      );
+      
+      if (routeComponent) {
+        streetName = routeComponent.long_name;
+      }
+    }
+    
+    return { streetName, formattedAddress };
+  } catch (error) {
+    console.error(`Error getting location info for ${lat},${lng}:`, error);
+    return { streetName: 'Unknown Street', formattedAddress: '' };
+  }
+}
+
+// Function to generate an SVG path from a set of points
+export function generateSVGPath(points: { lat: number; lng: number }[]): string {
+  if (!points || points.length === 0) return "";
+  
+  // Simple normalized path generation for visualization
+  // We'll use a basic scaling approach to fit points within an SVG area
+  
+  // Find min/max coordinates to establish boundaries
+  const lats = points.map(p => p.lat);
+  const lngs = points.map(p => p.lng);
+  
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  
+  // Apply a small margin
+  const latRange = (maxLat - minLat) || 0.01; // Avoid division by zero
+  const lngRange = (maxLng - minLng) || 0.01;
+  
+  // Generate the SVG path (normalized to 0-100 range)
+  let path = `M ${((points[0].lng - minLng) / lngRange) * 100},${(1 - (points[0].lat - minLat) / latRange) * 100}`;
+  
+  for (let i = 1; i < points.length; i++) {
+    const x = ((points[i].lng - minLng) / lngRange) * 100;
+    const y = (1 - (points[i].lat - minLat) / latRange) * 100;
+    path += ` L ${x},${y}`;
+  }
+  
+  return path;
+}
+
+// Function to format distance (alias for usage in the code)
+export function formatDistance(distanceMeters: number): string {
+  // Simple formatting for distances
+  if (distanceMeters < 1000) {
+    return `${distanceMeters.toFixed(0)}m`;
+  } else {
+    return `${(distanceMeters / 1000).toFixed(1)}km`;
+  }
+}
+
+// Function to format duration (alias for usage in the code)
+export function formatDuration(durationSeconds: number): string {
+  // Simple formatting for durations
+  if (durationSeconds < 60) {
+    return `${durationSeconds}s`;
+  } else if (durationSeconds < 3600) {
+    const minutes = Math.floor(durationSeconds / 60);
+    return `${minutes}m`;
+  } else {
+    const hours = Math.floor(durationSeconds / 3600);
+    const minutes = Math.floor((durationSeconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
+  }
+}
+
+// For backward compatibility
+export const calculateDistance = calculateDistanceBetweenPoints;
+
+// Simple placeholder implementation for creating mock routes
+// This is used as a fallback when API calls fail
+export async function createMockRoute(
+  source: Location,
+  destination: Location,
+  routeId: string,
+  travelMode: TravelMode
+): Promise<Route> {
+  // Create a direct path between source and destination
+  const points = [
+    { lat: source.coordinates.lat, lng: source.coordinates.lng },
+    { lat: destination.coordinates.lat, lng: destination.coordinates.lng }
+  ];
+  
+  // Calculate distance between the points
+  const distanceMeters = calculateDistance(
+    source.coordinates.lat, source.coordinates.lng,
+    destination.coordinates.lat, destination.coordinates.lng
+  );
+  
+  // Estimate duration based on travel mode
+  let speedMps = 13.9; // Default to 50 km/h (13.9 m/s)
+  if (travelMode === TravelMode.WALK) {
+    speedMps = 1.4; // 5 km/h walking speed
+  } else if (travelMode === TravelMode.BICYCLE) {
+    speedMps = 4.2; // 15 km/h biking speed
+  } else if (travelMode === TravelMode.TRANSIT) {
+    speedMps = 8.3; // 30 km/h transit speed
+  }
+  
+  const durationSeconds = Math.round(distanceMeters / speedMps);
+  
+  // Generate route points with positions
+  const routePoints = points.map((point, idx) => ({
+    coordinates: point,
+    position: {
+      x: `${idx}`,
+      y: `${idx}`
+    }
+  }));
+  
+  // Create SVG path
+  const path = generateSVGPath(points);
+  
+  // Create encoded polyline
+  const encodedPolyline = encodePolyline(points);
+  
+  // Get street view images
+  const streetViewResult = await fetchStreetViewImages(points, 300, source.city || "");
+  
+  // Create transitDetails if needed
+  const transitDetails = travelMode === TravelMode.TRANSIT ? [
+    {
+      type: 'TRANSIT',
+      mode: 'BUS',
+      departureStop: source.name,
+      arrivalStop: destination.name,
+      duration: formatDuration(durationSeconds)
+    }
+  ] : undefined;
+  
+  // Create a leg step
+  const step = {
+    polyline: {
+      encodedPolyline
+    },
+    distanceMeters,
+    staticDuration: formatDuration(durationSeconds),
+    travelMode: travelMode
+  };
+  
+  // Create route object
+  const route: Route = {
+    id: routeId,
+    source,
+    destination,
+    points: routePoints,
+    riskScore: 30, // Default medium risk
+    distance: formatDistance(distanceMeters),
+    duration: formatDuration(durationSeconds),
+    riskAreas: [],
+    path,
+    streetViewImages: streetViewResult.images,
+    streetViewLocations: streetViewResult.locations,
+    travelMode,
+    transitDetails,
+    geminiAnalysis: {
+      riskScores: [],
+      averageRiskScore: 0,
+      isAnalyzing: false
+    },
+    distanceMeters,
+    polyline: {
+      encodedPolyline
+    },
+    legs: [{
+      steps: [step]
+    }],
+    routeLabels: ["MOCK_ROUTE"]
+  };
+  
+  return route;
+}
+
+// Create a direct walking route as a fallback
+export async function createDirectWalkingRoute(
+  source: Location,
+  destination: Location
+): Promise<Route> {
+  return createMockRoute(source, destination, 'route-walking', TravelMode.WALK);
+}
+
+// Extract step polylines from route data
+export function extractStepPolylines(
+  route: any,
+  travelMode: TravelMode
+): { points: { lat: number; lng: number }[]; travelMode: string; distanceMeters: number; duration: string }[] {
+  try {
+    if (!route.legs || route.legs.length === 0 || !route.legs[0].steps) {
+      return [];
+    }
+    
+    return route.legs[0].steps.map((step: any) => {
+      const points = step.polyline && step.polyline.encodedPolyline
+        ? decodePolyline(step.polyline.encodedPolyline)
+        : [];
+        
+      return {
+        points,
+        travelMode: step.travelMode || travelMode,
+        distanceMeters: step.distanceMeters || 0,
+        duration: step.staticDuration || "0s"
+      };
+    });
+  } catch (error) {
+    console.error("Error extracting step polylines:", error);
+    return [];
+  }
+}
+
+// Simple implementation for extracting transit details
+export function extractEnhancedTransitDetails(route: any): any[] {
+  try {
+    if (!route.legs || route.legs.length === 0 || !route.legs[0].steps) {
+      return [];
+    }
+    
+    const transitSteps = [];
+    
+    for (const step of route.legs[0].steps) {
+      if (step.travelMode === 'TRANSIT' && step.transitDetails) {
+        transitSteps.push({
+          type: 'TRANSIT',
+          mode: step.transitDetails.line?.vehicle?.type || 'BUS',
+          departureStop: step.transitDetails.stopDetails?.departureStop?.name || 'Unknown',
+          arrivalStop: step.transitDetails.stopDetails?.arrivalStop?.name || 'Unknown',
+          departureTime: step.transitDetails.stopDetails?.departureTime || '',
+          arrivalTime: step.transitDetails.stopDetails?.arrivalTime || '',
+          line: step.transitDetails.line?.name || '',
+          headsign: step.transitDetails.headsign || '',
+          numStops: step.transitDetails.numStops || 0,
+          duration: step.staticDuration || '0s',
+          distance: `${step.distanceMeters || 0}m`
+        });
+      } else if (step.travelMode === 'WALKING') {
+        transitSteps.push({
+          type: 'WALKING',
+          mode: 'WALKING',
+          duration: step.staticDuration || '0s',
+          distance: `${step.distanceMeters || 0}m`
+        });
+      }
+    }
+    
+    return transitSteps;
+  } catch (error) {
+    console.error("Error extracting transit details:", error);
+    return [];
+  }
+}
