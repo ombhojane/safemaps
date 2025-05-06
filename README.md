@@ -57,8 +57,9 @@ SafeMaps analyzes various risk factors to recommend the safest travel routes:
    
    Create a `.env` file in the root directory with the following content:
    ```
-   VITE_GOOGLE_MAPS_API_KEY=your_google_cloud_api_key
+   VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
    VITE_GEMINI_API_KEY=your_gemini_api_key
+   VITE_SERPER_API_KEY=your_serper_api_key
    ```
 
 4. **Start the development server**
@@ -80,6 +81,7 @@ SafeMaps analyzes various risk factors to recommend the safest travel routes:
    - Maps JavaScript API
    - Directions API
    - Street View API
+   - Geocoding API
 5. Go to APIs & Services > Credentials
 6. Create an API key and add appropriate restrictions
 
@@ -135,5 +137,65 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - React and Vite communities for the excellent development tools
 - shadcn-ui for the beautiful UI components
 - OpenWeatherMap for weather data integration
+
+# SafeMaps - Accident Hotspot Analysis Feature
+
+## Overview
+The Accident Hotspot Analysis feature enhances the safety route planning capabilities of SafeMaps by identifying and analyzing locations with a history of accidents. This feature integrates with the existing street view analysis to provide a more comprehensive safety assessment of routes.
+
+## How It Works
+
+### Accident Hotspot Detection
+- The system identifies potential accident hotspots along a route using LangChain.js agents.
+- For each street view location, it queries for past 6 months accident history.
+- The accident data is analyzed using the Gemini AI model to determine:
+  - Accident frequency (low, moderate, high, or very high)
+  - Accident severity (minor, moderate, severe, or fatal)
+  - Risk factors contributing to accidents
+  - Safety precautions specific to that location
+
+### Integration with Street View Analysis
+- Accident context is added to the street view image analysis.
+- The Gemini AI model considers accident history when assessing risk scores.
+- Street view locations with significant accident history receive higher risk scores.
+- Overall route safety scores now include accident history as a factor.
+
+## Implementation Details
+
+### Key Components
+1. **Accident Hotspot Service** (`accidentHotspotsService.ts`):
+   - Performs web searches for accident history data
+   - Uses LangChain.js agents to process and analyze search results
+   - Returns structured data about accident history for specific locations
+
+2. **Maps Service Integration** (`mapsService.ts`):
+   - Enhanced to obtain address information for each street view location
+   - Calls the accident hotspot service to get accident data for each location
+   - Passes accident context to the street view image analysis
+
+3. **Gemini Service Enhancement** (`geminiService.ts`):
+   - Updated prompt to consider accident history data
+   - Modified scoring system to account for accident patterns
+   - Adds 5-25 points to risk scores based on accident frequency and severity
+
+### Technology Stack
+- **LangChain.js**: Framework for creating AI agents that perform web searches and analyze data
+- **Google Gemini AI**: Advanced LLM for interpreting accident data and street view images
+- **Dynamic Structured Tools**: Custom tools for web searches and data processing
+
+## Usage
+The accident hotspot analysis is automatically integrated into the route analysis workflow. No additional user actions are required to benefit from this feature.
+
+When viewing a route:
+1. The system analyzes street view images along the route
+2. For each location, it retrieves and analyzes accident history data
+3. The final risk assessment includes both visual safety factors and accident history
+4. Users see safety recommendations that account for known accident patterns
+
+## Future Enhancements
+- Integration with official traffic accident databases
+- Temporal analysis of accident patterns (time of day, day of week, seasonal patterns)
+- Machine learning models to predict accident likelihood based on visual features and historical data
+- User reporting of unsafe conditions and near-miss incidents
 
 

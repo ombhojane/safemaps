@@ -6,6 +6,7 @@ export interface Location {
     lat: number;
     lng: number;
   };
+  city?: string;
 }
 
 export interface RoutePoint {
@@ -122,6 +123,11 @@ export interface RouteAnalysis {
   overallRiskScore: number;
   riskAreas: RiskArea[];
   recommendation: string;
+  riskScores: number[];
+  explanations?: string[];
+  precautions?: string[];
+  images?: string[];
+  locations?: StreetViewLocation[];
 }
 
 // Map visualization types
@@ -158,6 +164,17 @@ export interface StreetViewLocation {
   heading: number;
   index: number;
   streetName?: string;
+  formattedAddress?: string;
+  accidentContext?: string;
+  // Add accident hotspot data
+  accidentHotspot?: {
+    hasAccidentHistory: boolean;
+    accidentFrequency: 'low' | 'moderate' | 'high' | 'very_high' | 'unknown';
+    accidentSeverity: 'minor' | 'moderate' | 'severe' | 'fatal' | 'unknown';
+    analysisText: string;
+    riskFactors: string[];
+    suggestedPrecautions: string[];
+  };
 }
 
 // New interface for step polylines

@@ -235,114 +235,123 @@ const StreetViewGallery = ({
         )}
       </div>
 
-      <div className="relative rounded-lg overflow-hidden border">
-        {/* Main Street View Image - add onClick handler */}
-        <img
-          src={images[currentIndex]}
-          alt={`Street view at point ${currentIndex + 1}`}
-          className={cn(
-            "w-full h-[300px] object-cover cursor-pointer",
-            viewingOnMap && "ring-4 ring-primary ring-opacity-80"
-          )}
-          onClick={() => handleImageClick(locations[currentIndex])}
-        />
-
-        {/* Show "View on Map" button overlay */}
-        {locations && locations.length > 0 && onImageClick && (
-          <Button
-            variant={viewingOnMap ? "default" : "secondary"}
-            size="sm"
+      {/* Individual Street View Image Card */}
+      <div className="w-full relative">
+        <div className="relative group overflow-hidden rounded-lg border">
+          {/* Main Street View Image - add onClick handler */}
+          <img
+            src={images[currentIndex]}
+            alt={`Street view at point ${currentIndex + 1}`}
             className={cn(
-              "absolute top-2 left-2 backdrop-blur-sm gap-1 text-xs",
-              viewingOnMap ? "bg-primary" : "bg-background/80 hover:bg-background/90"
+              "w-full h-[300px] object-cover cursor-pointer",
+              viewingOnMap && "ring-4 ring-primary ring-opacity-80"
             )}
             onClick={() => handleImageClick(locations[currentIndex])}
-          >
-            <MapPinIcon className="h-3 w-3" />
-            {viewingOnMap ? "Viewing on Map" : "View on Map"}
-          </Button>
-        )}
+          />
 
-        {/* Navigation Controls */}
-        <div className="absolute inset-0 flex items-center justify-between px-2">
-          <Button
-            variant="secondary"
-            size="icon"
-            className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background/90"
-            onClick={goToPrevious}
-            disabled={currentIndex === 0}
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Button>
-          <Button
-            variant="secondary"
-            size="icon"
-            className="rounded-full bg-background/80 backdrop-blur-sm hover:bg-background/90"
-            onClick={goToNext}
-            disabled={currentIndex === images.length - 1}
-          >
-            <ArrowRight className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Location Indicator */}
-        <div className="absolute bottom-2 right-2 py-1 px-2 rounded bg-background/80 backdrop-blur-sm text-xs font-medium">
-          {currentIndex + 1} / {images.length}
-        </div>
-
-        {/* Street Name Display (if available) */}
-        {locations && locations[currentIndex]?.streetName && (
-          <div className="absolute bottom-2 left-2 py-1 px-2 rounded bg-background/80 backdrop-blur-sm text-xs font-medium max-w-[70%] truncate">
-            {locations[currentIndex].streetName}
-          </div>
-        )}
-
-        {/* Risk Score Indicator (if available) */}
-        {geminiAnalysis?.riskScores && geminiAnalysis.riskScores[currentIndex] !== undefined && (
-          <div className="absolute top-2 right-2 py-1 px-3 rounded-full bg-background/90 backdrop-blur-sm flex items-center gap-1.5">
-            <span className="text-xs font-medium">Risk:</span>
-            <span 
-              className={cn(
-                "text-sm font-bold",
-                geminiAnalysis.riskScores[currentIndex] <= 30 ? "text-green-500" :
-                geminiAnalysis.riskScores[currentIndex] <= 60 ? "text-yellow-500" :
-                "text-red-500"
-              )}
-            >
-              {geminiAnalysis.riskScores[currentIndex]}/100
-            </span>
-          </div>
-        )}
-
-        {/* Show a more prominent indicator if an image is being viewed on map */}
-        {viewingOnMap && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="bg-primary/20 backdrop-blur-sm py-2 px-4 rounded-full flex items-center gap-2 animate-pulse">
-              <MapPin className="h-5 w-5 text-primary" />
-              <span className="text-sm font-medium text-primary">Viewing on Map</span>
+          {/* Street Name Label - simple, without accident data */}
+          {locations[currentIndex]?.streetName && (
+            <div className="absolute bottom-0 left-0 right-0 bg-black/60 p-2 text-white text-sm">
+              {locations[currentIndex].streetName}
             </div>
+          )}
+
+          {/* Image Navigation Controls */}
+          <div className="absolute inset-0 flex items-center justify-between p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              variant="secondary"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation();
+                goToPrevious();
+              }}
+              disabled={currentIndex === 0}
+              className="h-8 w-8 rounded-full bg-black/50 text-white"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon"
+              onClick={(e) => {
+                e.stopPropagation();
+                goToNext();
+              }}
+              disabled={currentIndex === images.length - 1}
+              className="h-8 w-8 rounded-full bg-black/50 text-white"
+            >
+              <ArrowRight className="h-4 w-4" />
+            </Button>
           </div>
-        )}
+          
+          {/* Image Counter */}
+          <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+            {currentIndex + 1} / {images.length}
+          </div>
+        </div>
       </div>
 
       {/* Image Analysis Information */}
-      {geminiAnalysis?.explanations && geminiAnalysis.explanations[currentIndex] && (
+      {(geminiAnalysis?.explanations && geminiAnalysis.explanations[currentIndex]) || 
+       locations[currentIndex]?.accidentHotspot ? (
         <div className="mt-2 mb-3 p-3 border rounded-md bg-card text-sm">
           <div className="flex flex-col gap-2">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
-              <p>{geminiAnalysis.explanations[currentIndex]}</p>
-            </div>
+            {/* Gemini Analysis */}
+            {geminiAnalysis?.explanations && geminiAnalysis.explanations[currentIndex] && (
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                <p>{geminiAnalysis.explanations[currentIndex]}</p>
+              </div>
+            )}
             
-            {geminiAnalysis.precautions && geminiAnalysis.precautions[currentIndex] && (
+            {/* Accident Hotspot Analysis */}
+            {locations[currentIndex]?.accidentHotspot && (
+              <>
+                <div className="flex items-start gap-2">
+                  <MapPinIcon className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                  <div className="flex flex-col gap-1">
+                    <p className="font-medium">Accident History Analysis</p>
+                    <p className="text-muted-foreground">{locations[currentIndex].accidentHotspot.analysisText}</p>
+                  </div>
+                </div>
+                
+                {locations[currentIndex].accidentHotspot.riskFactors?.length > 0 && (
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="h-4 w-4 text-yellow-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex flex-col gap-1">
+                      <p className="font-medium">Risk Factors:</p>
+                      <ul className="list-disc list-inside text-muted-foreground">
+                        {locations[currentIndex].accidentHotspot.riskFactors.map((factor, idx) => (
+                          <li key={idx}>{factor}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            
+            {/* Safety Precautions */}
+            {(geminiAnalysis?.precautions?.[currentIndex] || 
+              locations[currentIndex]?.accidentHotspot?.suggestedPrecautions?.length > 0) && (
               <div className="flex items-start gap-2">
                 <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                <p className="text-muted-foreground font-medium">{geminiAnalysis.precautions[currentIndex]}</p>
+                <div className="flex flex-col gap-1">
+                  <p className="font-medium">Safety Tips:</p>
+                  <ul className="list-disc list-inside text-muted-foreground">
+                    {locations[currentIndex]?.accidentHotspot?.suggestedPrecautions?.map((tip, idx) => (
+                      <li key={`hotspot-${idx}`}>{tip}</li>
+                    ))}
+                    {geminiAnalysis?.precautions?.[currentIndex] && (
+                      <li key="gemini">{geminiAnalysis.precautions[currentIndex]}</li>
+                    )}
+                  </ul>
+                </div>
               </div>
             )}
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Thumbnail Navigation */}
       <div className="flex gap-1 overflow-x-auto py-1">

@@ -27,7 +27,7 @@ interface ImageAnalysisResponse {
  */
 export const analyzeStreetViewImage = async (
   imageUrl: string, 
-  weatherInfo: string = ""
+  contextInfo: string = ""
 ): Promise<ImageAnalysisResponse> => {
   try {
     const model = genAI.getGenerativeModel({ model: modelName });
@@ -81,64 +81,91 @@ export const analyzeStreetViewImage = async (
     - Common minor road imperfections should receive minimal scores (1-3)
     - Judge road surface quality relative to local norms, not international standards
 
-    4. AVOIDING UNDER-SCORING OF HAZARDS:
+    4. ACCIDENT HOTSPOT CONSIDERATION:
+    - When accident history data is provided, prioritize it in your safety assessment (weight 25% of final score)
+    - For locations with confirmed accident history, add points based on frequency:
+      * Low frequency: +5-10 points
+      * Moderate frequency: +10-15 points
+      * High frequency: +15-20 points
+      * Very high frequency: +20-25 points
+    - Add additional points based on severity:
+      * Minor accidents: +0-5 points
+      * Moderate accidents: +5-10 points
+      * Severe accidents: +10-15 points
+      * Fatal accidents: +15-20 points
+    - Pay special attention to specific risk factors mentioned in accident data
+    - When specific precautions are suggested in accident data, incorporate them in your recommendations
+    - If accident data exists but visual assessment shows good conditions, still maintain at least a moderate risk score (30+)
+    - If multiple accidents with fatalities are reported, the risk score should be at least 50
+    - Consider recency - accidents in the past 3 months add an additional +5 points compared to older accidents
+    - When multiple news sources report the same accident, treat this as confirmation of a significant incident
+    - For locations that are explicitly mentioned as "accident-prone" or "black spots", add +15-20 points
+    - Include specific precautions directly related to the accident types identified (e.g., "reduce speed on curves" if accidents involved vehicles losing control on curves)
+    - For nearby locations (not exact match), apply a proximity factor: adjacent streets (80% of points), same neighborhood (60% of points), same district (40% of points)
+    - If search results mention no accidents, this is a POSITIVE safety indicator - reduce the final risk score by 5-10 points from what visual analysis alone would suggest
+
+    5. AVOIDING UNDER-SCORING OF HAZARDS:
     - Do not minimize real safety hazards present in the image
     - If multiple safety concerns are present, they should have a cumulative effect
     - Carefully evaluate visibility, road geometry, and traffic patterns
     - Properly account for situations requiring heightened driver attention
     - Never rate a road with significant hazards below 30
 
-    5. OUTPUT FORMAT:
+    6. FACTOR WEIGHTAGES (out of 100):
+    - Road Infrastructure: 30% (geometry, lanes, barriers, shoulders, intersections)
+    - Traffic Conditions: 25% (congestion, merging, vehicle mix, flow patterns)
+    - Accident History: 25% (apply only when data is available, redistribute to other factors if none)
+    - Environmental Factors: 10% (weather, lighting, visibility, surface conditions)
+    - Human Factors: 10% (pedestrians, construction, attention demands, unpredictable elements)
+
+    7. OUTPUT FORMAT:
     - Provide only the Risk Score, Explanation, and Precaution in your response
     - Do not include scoring criteria or calibration guidelines in your output
     `;
 
     const userPrompt = `
     Analyze this street view image for driving safety and road conditions, focusing on evidence-based risk factors.
-    ${weatherInfo ? `Weather context: ${weatherInfo}` : ''}
+    ${contextInfo ? `Additional context: ${contextInfo}` : ''}
 
     Evaluate the following key safety parameters:
 
     ROAD INFRASTRUCTURE (0-30 points):
-    - Road type and design: Evaluate road geometry, curves, grades, and design hazards (0-10)
-    - Lane width and count: Assess adequate space for vehicle operation (0-6)
-    - Dividers/barriers: Note presence or absence of median barriers and guardrails (0-5)
-    - Shoulder conditions: Evaluate space available for emergency stops (0-4)
-    - Intersection complexity: Consider junction design and control measures (0-3)
-    - Special structures: Note bridges, tunnels, or other specialized road features (0-2)
+    - Road type and design: Evaluate road geometry, curves, grades, and design hazards
+    - Lane width and count: Assess adequate space for vehicle operation
+    - Dividers/barriers: Note presence or absence of median barriers and guardrails
+    - Shoulder conditions: Evaluate space available for emergency stops
+    - Intersection complexity: Consider junction design and control measures
+    - Special structures: Note bridges, tunnels, or other specialized road features
 
     TRAFFIC CONDITIONS (0-25 points):
-    - Congestion: Assess vehicle density and flow constraints (0-10)
-    - Merging zones: Identify areas requiring lane changes or merging (0-5)
-    - Vehicle mix: Note diversity of vehicle types (trucks, cars, two-wheelers) (0-5)
-    - Traffic patterns: Evaluate predictability and consistency of traffic flow (0-5)
+    - Congestion: Assess vehicle density and flow constraints
+    - Merging zones: Identify areas requiring lane changes or merging
+    - Vehicle mix: Note diversity of vehicle types (trucks, cars, two-wheelers)
+    - Traffic patterns: Evaluate predictability and consistency of traffic flow
 
     ENVIRONMENTAL FACTORS (0-20 points):
-    - Weather conditions: Assess precipitation, fog, or other weather impacts (0-6)
-    - Lighting conditions: Evaluate natural and artificial lighting adequacy (0-5)
-    - Visibility: Note sight distance limitations from curves, hills, or obstructions (0-6)
-    - Road surface: Identify wet, icy, or degraded surface conditions (0-3)
+    - Weather conditions: Assess precipitation, fog, or other weather impacts
+    - Lighting conditions: Evaluate natural and artificial lighting adequacy
+    - Visibility: Note sight distance limitations from curves, hills, or obstructions
+    - Road surface: Identify wet, icy, or degraded surface conditions
 
     HUMAN FACTORS (0-15 points):
-    - Pedestrian zones: Note areas with pedestrian presence or crossings (0-5)
-    - Construction: Identify work zones or temporary road configurations (0-4)
-    - Attention demands: Assess navigation complexity and decision points (0-3)
-    - Unpredictable elements: Note potential for sudden changes (shops, bus stops) (0-3)
+    - Pedestrian zones: Note areas with pedestrian presence or crossings
+    - Construction: Identify work zones or temporary road configurations
+    - Attention demands: Assess navigation complexity and decision points
+    - Unpredictable elements: Note potential for sudden changes (shops, bus stops)
 
     INFRASTRUCTURE QUALITY (0-10 points):
-    - Road surface quality: Assess pavement condition and maintenance (0-4)
-    - Street lighting: Evaluate presence and adequacy of illumination (0-2)
-    - Traffic signals/signs: Note presence and condition of traffic controls (0-4)
+    - Road surface quality: Assess pavement condition and maintenance
+    - Street lighting: Evaluate presence and adequacy of illumination
+    - Traffic signals/signs: Note presence and condition of traffic controls
 
-    TOTAL RISK SCORE GUIDELINES: 
-    - Baseline for a typical good, normal road is 15-25 points
-    - Roads with moderate safety concerns: 30-45
-    - Roads with significant hazards: 45-60
-    - Roads with critical dangers: 60+
-    - Consider cumulative effects of multiple hazards
-    - Accurately identify and score significant safety issues
+    ACCIDENT HISTORY FACTOR (0-25 points):
+    - If accident history context is provided, use this information to adjust the risk score
+    - Consider both the frequency and severity of past accidents
+    - Add appropriate points based on accident history severity
 
-    Calculate a TOTAL RISK SCORE by adding pointst across all categories, where higher points indicate higher risk.
+    Calculate a TOTAL RISK SCORE by adding points across all categories, where higher points indicate higher risk.
 
     Format your response exactly like this with one line for each:
     Risk Score: [number 0-100]
@@ -213,7 +240,7 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
  */
 export const analyzeStreetViewImages = async (
   imageUrls: string[],
-  weatherInfo: string = ""
+  contextInfo: string = ""
 ): Promise<{
   riskScores: number[];
   explanations: string[];
@@ -230,7 +257,7 @@ export const analyzeStreetViewImages = async (
   for (let i = 0; i < imageUrls.length; i += concurrencyLimit) {
     const batch = imageUrls.slice(i, i + concurrencyLimit);
     const batchResults = await Promise.all(
-      batch.map(url => analyzeStreetViewImage(url, weatherInfo))
+      batch.map(url => analyzeStreetViewImage(url, contextInfo))
     );
     
     batchResults.forEach(result => {
@@ -240,7 +267,11 @@ export const analyzeStreetViewImages = async (
     });
   }
   
-  return { riskScores, explanations, precautions };
+  return {
+    riskScores,
+    explanations,
+    precautions
+  };
 };
 
 /**
