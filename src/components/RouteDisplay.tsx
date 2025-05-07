@@ -129,15 +129,15 @@ const RouteDisplay = ({
                 
                 <div className="flex flex-col gap-1 items-end">
                   <div className="flex items-center gap-2">
-                    <div className="px-2 py-1 rounded-full text-xs font-medium flex items-center">
+                    {/* <div className="px-2 py-1 rounded-full text-xs font-medium flex items-center">
                       <span className={cn("inline-block w-2 h-2 rounded-full mr-1.5", riskColor)}></span>
                       Risk: {route.riskScore.toFixed(1)}/10
-                    </div>
+                    </div> */}
                     
                     {route.geminiAnalysis?.riskScores?.length > 0 && (
                       <div className="px-2 py-1 rounded-full text-xs font-medium flex items-center">
                         <span className={cn("inline-block w-2 h-2 rounded-full mr-1.5", aiScoreColor)}></span>
-                        AI: {route.geminiAnalysis.averageRiskScore}/100
+                        Safety Score: {route.geminiAnalysis.averageRiskScore}/100
                       </div>
                     )}
                   </div>

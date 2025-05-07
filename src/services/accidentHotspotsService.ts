@@ -3,7 +3,6 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { StreetViewLocation } from "@/types";
 
 // Get API key from environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -382,130 +381,8 @@ export async function getAccidentHotspotContext(
   }
 }
 
-// Event name for accident hotspot data updates
-export const ACCIDENT_HOTSPOT_UPDATE_EVENT = 'accident-hotspot-update';
-
-// Dispatch an event when accident hotspot data is updated
-export const dispatchAccidentHotspotUpdate = (locationIndex: number, routeId: string, accidentHotspotData: AccidentHotspotResponse) => {
-  const event = new CustomEvent(ACCIDENT_HOTSPOT_UPDATE_EVENT, {
-    detail: {
-      locationIndex,
-      routeId,
-      accidentHotspotData
-    }
-  });
-  
-  window.dispatchEvent(event);
-};
-
-/**
- * Load accident hotspot data asynchronously for a route's locations
- * This allows routes to be displayed immediately while accident data loads in background
- */
-export async function loadAccidentHotspotDataAsync(
-  locations: StreetViewLocation[], 
-  routeId: string
-): Promise<void> {
-  if (!locations || locations.length === 0) return;
-  
-  // First, prioritize locations that are likely to be visible first (beginning, middle, end)
-  const prioritizedIndices = [];
-  
-  // Add the start point (index 0)
-  if (locations.length > 0) {
-    prioritizedIndices.push(0);
-  }
-  
-  // Add the middle point
-  if (locations.length > 2) {
-    const middleIndex = Math.floor(locations.length / 2);
-    prioritizedIndices.push(middleIndex);
-  }
-  
-  // Add the end point
-  if (locations.length > 1) {
-    prioritizedIndices.push(locations.length - 1);
-  }
-  
-  // Process priority locations first
-  await Promise.all(prioritizedIndices.map(async (locationIndex) => {
-    try {
-      // Skip if no address information
-      if (!locations[locationIndex].formattedAddress && !locations[locationIndex].streetName) {
-        return;
-      }
-      
-      // Create address string
-      const address = locations[locationIndex].formattedAddress || locations[locationIndex].streetName;
-      
-      // Get accident hotspot data
-      const accidentHotspotData = await getAccidentHotspotData(address);
-      
-      // Dispatch event with the updated data
-      dispatchAccidentHotspotUpdate(locationIndex, routeId, accidentHotspotData);
-    } catch (error) {
-      console.error("Error loading accident data asynchronously:", error);
-    }
-  }));
-  
-  // Process remaining locations in batches
-  const remainingIndices = Array.from(Array(locations.length).keys())
-    .filter(index => !prioritizedIndices.includes(index));
-  
-  // Process locations in parallel with a concurrency limit
-  const concurrencyLimit = 3;
-  const locationBatches = [];
-  
-  // Create batches of locations to process
-  for (let i = 0; i < remainingIndices.length; i += concurrencyLimit) {
-    locationBatches.push(remainingIndices.slice(i, i + concurrencyLimit));
-  }
-  
-  // Process each batch sequentially to avoid overwhelming the API
-  for (const batchIndices of locationBatches) {
-    // Process locations in this batch in parallel
-    await Promise.all(batchIndices.map(async (locationIndex) => {
-      try {
-        // Skip if no address information
-        if (!locations[locationIndex].formattedAddress && !locations[locationIndex].streetName) {
-          return;
-        }
-        
-        // Create address string
-        const address = locations[locationIndex].formattedAddress || locations[locationIndex].streetName;
-        
-        // Get accident hotspot data
-        const accidentHotspotData = await getAccidentHotspotData(address);
-        
-        // Dispatch event with the updated data
-        dispatchAccidentHotspotUpdate(locationIndex, routeId, accidentHotspotData);
-      } catch (error) {
-        console.error("Error loading accident data asynchronously:", error);
-      }
-    }));
-    
-    // Add a small delay between batches to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-}
-
-// Default empty accident hotspot data
-export const getEmptyAccidentHotspotData = (): AccidentHotspotResponse => {
-  return {
-    hasAccidentHistory: false,
-    accidentFrequency: 'none',
-    accidentSeverity: 'none',
-    analysisText: "Loading accident data...",
-    riskFactors: [],
-    suggestedPrecautions: []
-  };
-};
-
 export default {
   getAccidentHotspotData,
   analyzeAccidentHotspots,
-  getAccidentHotspotContext,
-  dispatchAccidentHotspotUpdate,
-  loadAccidentHotspotDataAsync,
-  getEmptyAccidentHotspotData
+  getAccidentHotspotContext
 }; 
