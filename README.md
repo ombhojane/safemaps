@@ -1,6 +1,9 @@
 # SafeMaps
 
-SafeMaps helps users find safe routes between locations by analyzing road conditions, traffic patterns, and environmental factors.
+Safemaps is a smart add-on to your regular map that shows you not just how to get somewhere, but how to get there safely. Whether you’re walking home late, driving in bad weather, or exploring a new city, Safemaps looks at real-world conditions — like road quality, accidents, crime reports, and weather — and helps you choose the route that feels right.
+
+![image](https://github.com/user-attachments/assets/e11acc53-1320-4dca-adfc-cad9edd5ddc3)
+
 
 ## Features
 
