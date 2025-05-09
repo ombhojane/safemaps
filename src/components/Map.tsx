@@ -56,7 +56,7 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
     loadMap();
   }, []);
 
-  // Initialize map once API is loaded
+  // Update the useEffect that creates the map
   useEffect(() => {
     if (!mapLoaded || !mapRef.current) return;
 
@@ -99,11 +99,25 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
 
       const map = new window.google.maps.Map(mapRef.current, mapOptions);
 
+      // Apply navigation mode styles if in navigation mode
+      if (isNavigationMode) {
+        setNavigationMode(map);
+      }
+      
+      // Handle current location with animated marker if available
+      if (currentLocation) {
+        const currentPos = new window.google.maps.LatLng(
+          currentLocation.coordinates.lat,
+          currentLocation.coordinates.lng
+        );
+        createCurrentLocationMarker(map, currentPos);
+      }
+
       setGoogleMap(map);
     } catch (error) {
       console.error("Error initializing Google Maps:", error);
     }
-  }, [mapLoaded, isNavigationMode]);
+  }, [mapLoaded, isNavigationMode, currentLocation]);
 
   // Update routes on the map
   useEffect(() => {
@@ -589,6 +603,250 @@ const Map = forwardRef<HTMLDivElement, MapProps>(({
     } else {
       return isSelected ? "#dc2626" : "#ef4444"; // Red
     }
+  };
+
+  // Set map to navigation mode
+  const setNavigationMode = (map: google.maps.Map) => {
+    if (isNavigationMode) {
+      map.setOptions({
+        zoomControl: false,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: false,
+        rotateControl: false,
+        scrollwheel: false,
+        gestureHandling: "greedy",
+        maxZoom: 21,
+        mapId: "navigation_map",
+        styles: [
+          {
+            featureType: "poi",
+            elementType: "labels",
+            stylers: [{ visibility: "off" }]
+          },
+          {
+            featureType: "transit",
+            elementType: "labels",
+            stylers: [{ visibility: "off" }]
+          },
+          {
+            featureType: "road",
+            elementType: "geometry",
+            stylers: [{ weight: 1.5 }]
+          },
+          {
+            featureType: "road.arterial",
+            elementType: "geometry",
+            stylers: [{ weight: 2 }]
+          },
+          {
+            featureType: "road.highway",
+            elementType: "geometry",
+            stylers: [{ weight: 3 }]
+          },
+          {
+            featureType: "road.local",
+            elementType: "labels",
+            stylers: [{ visibility: "simplified" }]
+          }
+        ]
+      });
+    }
+  };
+
+  // Create marker for current location
+  const createCurrentLocationMarker = (map: google.maps.Map, position: google.maps.LatLng) => {
+    // Remove existing marker if it exists
+    if (currentLocationMarkerRef.current) {
+      currentLocationMarkerRef.current.setMap(null);
+    }
+
+    if (isNavigationMode) {
+      // Create pulsing dot for navigation mode
+      const pulsingDot = {
+        url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
+          <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="10" fill="#4285F4" fill-opacity="0.2">
+              <animate attributeName="r" values="6;10;6" dur="2s" repeatCount="indefinite" />
+              <animate attributeName="fill-opacity" values="0.5;0.2;0.5" dur="2s" repeatCount="indefinite" />
+            </circle>
+            <circle cx="12" cy="12" r="6" fill="#4285F4" stroke="white" stroke-width="2" />
+          </svg>
+        `),
+        size: new google.maps.Size(24, 24),
+        anchor: new google.maps.Point(12, 12),
+        scaledSize: new google.maps.Size(24, 24),
+      };
+
+      currentLocationMarkerRef.current = new google.maps.Marker({
+        position,
+        map,
+        icon: pulsingDot,
+        zIndex: 999,
+      });
+    } else {
+      // Default marker for non-navigation mode
+      currentLocationMarkerRef.current = new google.maps.Marker({
+        position,
+        map,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 8,
+          fillColor: "#4285F4",
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2,
+        },
+        zIndex: 999,
+      });
+    }
+  };
+
+  // Draw routes
+  const drawRoutes = (map: google.maps.Map) => {
+    // Clear existing route polylines
+    clearRoutePolylines();
+
+    if (!routes?.length) return;
+
+    // Add route polylines
+    routes.forEach((route) => {
+      if (!route.encodedPolyline) return;
+
+      // Get path from encoded polyline
+      const path = google.maps.geometry.encoding.decodePath(route.encodedPolyline);
+
+      // Create polyline for the route
+      const isSelected = route.id === selectedRouteId;
+      const isNavigationModeAndSelected = isNavigationMode && isSelected;
+
+      const routePolyline = new google.maps.Polyline({
+        path,
+        strokeColor: isNavigationModeAndSelected 
+          ? "#1DB954" // Green color for selected route in navigation mode
+          : isSelected 
+            ? "#1976D2" // Blue color for selected route
+            : "#757575", // Gray for unselected routes
+        strokeOpacity: isNavigationModeAndSelected ? 1.0 : isSelected ? 0.9 : 0.7,
+        strokeWeight: isNavigationModeAndSelected ? 6 : isSelected ? 5 : 3,
+        map,
+        zIndex: isSelected ? 2 : 1,
+      });
+
+      // If in navigation mode and this is selected route, add animated arrow polyline
+      if (isNavigationModeAndSelected) {
+        // Add animated arrow icons along the route
+        const arrowSymbol = {
+          path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          fillColor: "#FFFFFF",
+          fillOpacity: 1,
+          scale: 3,
+          strokeColor: "#1DB954",
+          strokeWeight: 1,
+        };
+
+        const arrowPolyline = new google.maps.Polyline({
+          path,
+          icons: [{
+            icon: arrowSymbol,
+            offset: "0%",
+            repeat: "10%"
+          }],
+          strokeColor: "#1DB954",
+          strokeOpacity: 0,
+          map,
+          zIndex: 3,
+        });
+
+        // Animate the arrow
+        let offset = 0;
+        setInterval(() => {
+          offset = (offset + 1) % 100;
+          const icons = arrowPolyline.get("icons");
+          icons[0].offset = offset + "%";
+          arrowPolyline.set("icons", icons);
+        }, 100);
+
+        // Store for later cleanup
+        routePolylinesRef.current.push(arrowPolyline);
+      }
+
+      // Create pulse effect on the selected route if in navigation mode
+      if (isNavigationModeAndSelected) {
+        const pulsePolyline = new google.maps.Polyline({
+          path,
+          strokeColor: "#1DB954",
+          strokeOpacity: 0.4,
+          strokeWeight: 9,
+          map,
+          zIndex: 1,
+        });
+
+        // Animate the pulse effect
+        let opacity = 0.4;
+        let increasing = false;
+        setInterval(() => {
+          if (increasing) {
+            opacity += 0.01;
+            if (opacity >= 0.4) {
+              increasing = false;
+            }
+          } else {
+            opacity -= 0.01;
+            if (opacity <= 0.2) {
+              increasing = true;
+            }
+          }
+          pulsePolyline.setOptions({ strokeOpacity: opacity });
+        }, 50);
+
+        // Store for later cleanup
+        routePolylinesRef.current.push(pulsePolyline);
+      }
+
+      // Store for later cleanup
+      routePolylinesRef.current.push(routePolyline);
+
+      // Add start and end markers if needed
+      if (showMarkers && route.origin && route.destination) {
+        const originMarker = new google.maps.Marker({
+          position: { lat: route.origin.coordinates.lat, lng: route.origin.coordinates.lng },
+          map,
+          icon: isNavigationModeAndSelected ? {
+            url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
+              <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="12" cy="12" r="12" fill="#1DB954" />
+                <circle cx="12" cy="12" r="8" fill="white" />
+                <circle cx="12" cy="12" r="4" fill="#1DB954" />
+              </svg>
+            `),
+            size: new google.maps.Size(24, 24),
+            anchor: new google.maps.Point(12, 12),
+          } : originMarkerIcon,
+          title: route.origin.name,
+          zIndex: 999,
+        });
+
+        const destinationMarker = new google.maps.Marker({
+          position: { lat: route.destination.coordinates.lat, lng: route.destination.coordinates.lng },
+          map,
+          icon: isNavigationModeAndSelected ? {
+            url: "data:image/svg+xml;charset=UTF-8," + encodeURIComponent(`
+              <svg width="48" height="48" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                <path d="M24 4c-7.73 0-14 6.27-14 14 0 10.5 14 26 14 26s14-15.5 14-26c0-7.73-6.27-14-14-14zm0 19c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" fill="#1DB954"/>
+                <path d="M24 14c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z" fill="white"/>
+              </svg>
+            `),
+            size: new google.maps.Size(48, 48),
+            anchor: new google.maps.Point(24, 40),
+          } : destinationMarkerIcon,
+          title: route.destination.name,
+          zIndex: 998,
+        });
+
+        routeMarkersRef.current.push(originMarker, destinationMarker);
+      }
+    });
   };
 
   return (

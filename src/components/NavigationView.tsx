@@ -12,7 +12,12 @@ import {
   ChevronDown, 
   Clock,
   Timer,
-  MapPin
+  MapPin,
+  Search,
+  Share2,
+  Plus,
+  Menu,
+  AlertTriangle
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Route } from "@/types";
@@ -40,6 +45,7 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [isBottomSheetExpanded, setIsBottomSheetExpanded] = useState(false);
+  const [isBottomMenuOpen, setIsBottomMenuOpen] = useState(false);
   const [isRequestingLocation, setIsRequestingLocation] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   
@@ -178,6 +184,11 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
   const toggleBottomSheet = () => {
     setIsBottomSheetExpanded(!isBottomSheetExpanded);
   };
+
+  // Toggle bottom menu
+  const toggleBottomMenu = () => {
+    setIsBottomMenuOpen(!isBottomMenuOpen);
+  };
   
   return (
     <div className="fixed inset-0 w-full h-full bg-background flex flex-col z-50">
@@ -211,7 +222,7 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
             <X className="h-5 w-5" />
           </Button>
           
-          <div className="bg-background/90 backdrop-blur-sm py-1 px-3 rounded-full shadow-md">
+          <div className="bg-green-600 text-white py-1 px-3 rounded-full shadow-md">
             <p className="text-sm font-medium">
               ETA: {getFormattedETA()}
             </p>
@@ -236,8 +247,9 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
             variant="secondary"
             size="icon"
             className="h-10 w-10 rounded-full bg-background/90 backdrop-blur-sm shadow-md"
+            onClick={toggleBottomMenu}
           >
-            <Layers className="h-5 w-5" />
+            <Menu className="h-5 w-5" />
           </Button>
         </div>
       </div>
@@ -264,11 +276,27 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
           {/* Status and Progress */}
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <div className="bg-primary/10 w-8 h-8 rounded-full flex items-center justify-center">
-                <Clock className="h-4 w-4 text-primary" />
+              <div className="relative">
+                <div className="h-10 w-10 rounded-full flex items-center justify-center">
+                  <svg className="w-10 h-10" viewBox="0 0 36 36">
+                    <circle cx="18" cy="18" r="16" fill="none" className="stroke-green-100" strokeWidth="2"></circle>
+                    <circle 
+                      cx="18" 
+                      cy="18" 
+                      r="16" 
+                      fill="none" 
+                      className="stroke-green-500" 
+                      strokeWidth="2" 
+                      strokeDasharray="100" 
+                      strokeDashoffset={100 - (navigationState?.navigationProgress || 0)}
+                      transform="rotate(-90 18 18)"
+                    ></circle>
+                  </svg>
+                  <Clock className="h-4 w-4 text-green-600 absolute" />
+                </div>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-green-800">
                   {formatTimeRemaining(navigationState?.remainingDuration || 0)}
                 </p>
                 <p className="text-sm font-medium">
@@ -280,7 +308,7 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
             <div className="w-24">
               <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
                 <div 
-                  className="h-full bg-primary transition-all duration-500 ease-out"
+                  className="h-full bg-green-500 transition-all duration-500 ease-out"
                   style={{ width: `${navigationState?.navigationProgress || 0}%` }}
                 ></div>
               </div>
@@ -289,7 +317,7 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
             <Button
               variant="ghost"
               size="sm"
-              className="text-primary flex items-center gap-1 p-0"
+              className="text-green-600 flex items-center gap-1 p-0"
               onClick={toggleBottomSheet}
             >
               {isBottomSheetExpanded ? (
@@ -302,17 +330,17 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
           
           {/* Main Instruction Card */}
           {navigationState?.currentStep && (
-            <div className="bg-card rounded-xl p-4 shadow-sm mb-4">
+            <div className="bg-white rounded-xl p-4 shadow-sm mb-4 border border-green-100">
               {/* Direction with distance */}
               <div className="flex items-center mb-3">
-                <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mr-4">
-                  <div className="h-10 w-10">
+                <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mr-4 border-2 border-green-100">
+                  <div className="h-10 w-10 text-green-600">
                     {getManeuverIcon(navigationState.currentStep.maneuver)}
                   </div>
                 </div>
                 
                 <div className="flex-1">
-                  <h3 className="text-2xl font-bold">
+                  <h3 className="text-2xl font-bold text-green-800">
                     {formatDistance(navigationState.distanceToNextTurn)}
                   </h3>
                   <p className="text-base">
@@ -322,8 +350,8 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
               </div>
               
               {/* Street name */}
-              <div className="bg-muted/50 rounded-lg py-2 px-3">
-                <p className="text-sm font-medium">
+              <div className="bg-green-50 rounded-lg py-2 px-3">
+                <p className="text-sm font-medium text-green-800">
                   {navigationState.currentStep.streetName !== "Unknown Road" 
                     ? navigationState.currentStep.streetName 
                     : navigationState.currentRoute?.destination?.name 
@@ -336,19 +364,19 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
           
           {/* Next Instruction (only visible in expanded mode) */}
           {isBottomSheetExpanded && navigationState?.nextStep && (
-            <div className="bg-muted/30 rounded-xl p-3 mb-4 flex items-center">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center mr-3">
-                <div className="h-6 w-6">
+            <div className="bg-green-50/50 rounded-xl p-3 mb-4 flex items-center border border-green-100">
+              <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center mr-3">
+                <div className="h-6 w-6 text-green-600">
                   {getManeuverIcon(navigationState.nextStep.maneuver)}
                 </div>
               </div>
               
               <div className="flex-1">
-                <p className="text-sm text-muted-foreground">Then</p>
+                <p className="text-sm text-green-700">Then</p>
                 <p className="text-sm font-medium">
                   {navigationState.nextStep.instruction}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-green-700">
                   {navigationState.nextStep.streetName !== "Unknown Road" 
                     ? navigationState.nextStep.streetName 
                     : "Continue on route"}
@@ -356,7 +384,7 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
               </div>
               
               <div className="text-right">
-                <p className="text-sm font-medium">
+                <p className="text-sm font-medium text-green-700">
                   {formatDistance(navigationState.nextStep.distance)}
                 </p>
               </div>
@@ -425,7 +453,7 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
                 {route.destination.name}
               </p>
               <Button
-                className="w-full"
+                className="w-full bg-green-600 hover:bg-green-700"
                 onClick={onClose}
               >
                 End Navigation
@@ -449,7 +477,7 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
               </p>
               <div className="space-y-3 w-full max-w-xs">
                 <Button
-                  className="w-full"
+                  className="w-full bg-green-600 hover:bg-green-700"
                   onClick={handleRequestLocation}
                   disabled={isRequestingLocation}
                 >
@@ -476,6 +504,61 @@ const NavigationView = ({ route, onClose }: NavigationViewProps) => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* New Bottom Navigation Menu (Google Maps style) */}
+      {isBottomMenuOpen && (
+        <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-xl z-20 shadow-lg">
+          <div className="p-2 border-b">
+            <Button variant="ghost" onClick={toggleBottomMenu} className="w-full flex justify-center py-2">
+              <ChevronDown className="h-5 w-5" />
+            </Button>
+          </div>
+          <div className="grid divide-y">
+            <Button variant="ghost" className="flex items-center justify-start gap-3 px-6 py-5 h-auto">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              <span>Report incident</span>
+              <span className="px-2 py-0.5 text-xs rounded bg-green-100 text-green-800 ml-auto">New</span>
+            </Button>
+            <Button variant="ghost" className="flex items-center justify-start gap-3 px-6 py-5 h-auto">
+              <Share2 className="h-5 w-5 text-green-600" />
+              <span>Share trip progress</span>
+              <span className="px-2 py-0.5 text-xs rounded bg-green-100 text-green-800 ml-auto">New</span>
+            </Button>
+            <Button variant="ghost" className="flex items-center justify-start gap-3 px-6 py-5 h-auto">
+              <Search className="h-5 w-5 text-green-600" />
+              <span>Search along route</span>
+            </Button>
+            <Button variant="ghost" className="flex items-center justify-start gap-3 px-6 py-5 h-auto">
+              <Menu className="h-5 w-5 text-green-600" />
+              <span>Directions</span>
+            </Button>
+            <Button variant="ghost" className="flex items-center justify-start gap-3 px-6 py-5 h-auto">
+              <Layers className="h-5 w-5 text-green-600" />
+              <span>Map layers</span>
+              <div className="ml-auto">
+                <div className="w-10 h-6 rounded-full bg-gray-200 flex items-center px-1">
+                  <div className="w-4 h-4 rounded-full bg-white"></div>
+                </div>
+              </div>
+            </Button>
+            <Button variant="ghost" className="flex items-center justify-start gap-3 px-6 py-5 h-auto">
+              <Settings className="h-5 w-5 text-green-600" />
+              <span>Settings</span>
+            </Button>
+          </div>
+        </div>
+      )}
+      
+      {/* New Floating Bottom Button (for re-centering) */}
+      <div className="absolute bottom-32 right-4 z-10">
+        <Button 
+          className="h-12 w-12 rounded-full bg-white shadow-md flex items-center justify-center border border-gray-200"
+        >
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 8c-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06zM12 19c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7z" fill="#1DB954"/>
+          </svg>
+        </Button>
       </div>
     </div>
   );
