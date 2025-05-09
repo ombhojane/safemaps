@@ -110,7 +110,7 @@ const RouteList = ({
   return (
     <div key={routesKey} className={cn("space-y-4", className)}>
       <div className="flex justify-between items-center mb-1">
-        <h2 className="text-lg font-medium">Available Routes ({routes.length})</h2>
+        <h2 className="text-lg font-medium">Routes ({routes.length})</h2>
       </div>
       
       <div className={cn("space-y-4", compact ? "flex overflow-x-auto pb-2 space-x-4 space-y-0" : "")}>

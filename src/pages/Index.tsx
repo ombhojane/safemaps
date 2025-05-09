@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import Map from "@/components/Map";
 import RouteForm from "@/components/RouteForm";
 import RouteDisplay from '@/components/RouteDisplay';
+import SafestRoute from '@/components/SafestRoute';
 import StreetViewGallery from "@/components/StreetViewGallery";
 import { Location, Route, StreetViewLocation } from "@/types";
 import { 
@@ -510,6 +511,18 @@ const Index = () => {
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}>
           <div className="flex flex-col h-full py-16 px-4">
+            {/* Safest Route Display - new component */}
+            <div className="mb-4">
+              <SafestRoute 
+                routes={routes} 
+                onRouteSelect={handleRouteSelect}
+                onStartTrip={handleStartTrip}
+                isStartingTrip={isStartingTrip}
+                isLoading={isLoading}
+                travelMode={selectedTravelMode}
+              />
+            </div>
+            
             {/* Routes Display - consolidated component */}
             <div className="mb-4">
               <RouteDisplay 
@@ -702,14 +715,24 @@ const Index = () => {
           
           {/* Scrollable content */}
           <div className="overflow-auto pb-safe max-h-[calc(90vh-6rem)] px-4">
-            <RouteDisplay 
-                routes={routes} 
-                selectedRouteId={selectedRouteId} 
-                onRouteSelect={handleRouteSelect}
-                onStartTrip={handleStartTrip}
-                isStartingTrip={isStartingTrip}
+            {/* Safest Route Display - new component */}
+            <SafestRoute 
+              routes={routes} 
+              onRouteSelect={handleRouteSelect}
+              onStartTrip={handleStartTrip}
+              isStartingTrip={isStartingTrip}
+              isLoading={isLoading}
               travelMode={selectedTravelMode}
-              />
+            />
+            
+            <RouteDisplay 
+              routes={routes} 
+              selectedRouteId={selectedRouteId} 
+              onRouteSelect={handleRouteSelect}
+              onStartTrip={handleStartTrip}
+              isStartingTrip={isStartingTrip}
+              travelMode={selectedTravelMode}
+            />
             
             {/* Route details (shown when expanded) */}
             {selectedRoute && bottomSheetState !== 'peek' && (

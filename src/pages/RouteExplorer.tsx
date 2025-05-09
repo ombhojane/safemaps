@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import TravelModeSelector from '@/components/TravelModeSelector';
 import RouteDisplay from '@/components/RouteDisplay';
+import SafestRoute from '@/components/SafestRoute';
 import { computeRoutes, TravelMode } from '@/services/mapsService';
 import { Route, Location } from '@/types';
 import { useLocation as useRouterLocation, useNavigate } from 'react-router-dom';
@@ -107,12 +108,23 @@ const RouteExplorer: React.FC = () => {
       
       {/* Route display */}
       {!loading && routes.length > 0 && (
-        <RouteDisplay 
-          routes={routes} 
-          selectedRouteId={selectedRouteId} 
-          onRouteSelect={handleRouteSelect}
-          travelMode={selectedTravelMode}
-        />
+        <>
+          {/* Safest Route Display */}
+          <SafestRoute 
+            routes={routes} 
+            onRouteSelect={handleRouteSelect}
+            travelMode={selectedTravelMode}
+            isLoading={loading}
+          />
+          
+          {/* All Routes Display */}
+          <RouteDisplay 
+            routes={routes} 
+            selectedRouteId={selectedRouteId} 
+            onRouteSelect={handleRouteSelect}
+            travelMode={selectedTravelMode}
+          />
+        </>
       )}
       
       {/* View details button */}
