@@ -3,10 +3,12 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { DynamicStructuredTool } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { testGoogleCustomSearch } from "./googleCustomSearchTest";
 
-// Get API key from environment variables
+// Get API keys from environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const SERPER_API_KEY = import.meta.env.VITE_SERPER_API_KEY;
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+const CUSTOM_SEARCH_ENGINE_ID = import.meta.env.VITE_CUSTOM_SEARCH_ENGINE_ID || ''; // Add this to your env
 
 // Initialize the Gemini API
 const genAI = new GoogleGenerativeAI(API_KEY);
@@ -28,7 +30,7 @@ export interface AccidentHotspotResponse {
   suggestedPrecautions: string[];
 }
 
-// Tool for web search to find accident history data
+// Tool for web search to find accident history data using Google Custom Search JSON API
 const webSearchTool = new DynamicStructuredTool({
   name: "web_search",
   description: "Search for accident history data for a specific location",
@@ -65,8 +67,15 @@ const webSearchTool = new DynamicStructuredTool({
         `traffic accidents thane mumbai recent`  // Add a broader fallback query
       ];
       
-      if (!SERPER_API_KEY) {
-        console.error("Missing SERPER_API_KEY in environment variables");
+      if (!GOOGLE_MAPS_API_KEY) {
+        console.error("Missing GOOGLE_MAPS_API_KEY in environment variables");
+        return JSON.stringify({ 
+          searchResults: [] 
+        });
+      }
+
+      if (!CUSTOM_SEARCH_ENGINE_ID) {
+        console.error("Missing CUSTOM_SEARCH_ENGINE_ID in environment variables");
         return JSON.stringify({ 
           searchResults: [] 
         });
@@ -79,52 +88,21 @@ const webSearchTool = new DynamicStructuredTool({
       for (const searchQuery of searchQueries) {
         console.log(`Trying search query: ${searchQuery}`);
         
-        // Use Serper API to search for accident data
-        const response = await fetch("https://google.serper.dev/search", {
-          method: 'POST',
-          headers: {
-            'X-API-KEY': SERPER_API_KEY,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            q: searchQuery,
-            num: 10
-          })
-        });
+        // Use Google Custom Search API through our test function
+        const searchResult = await testGoogleCustomSearch(searchQuery);
         
-        if (!response.ok) {
-          console.error(`Search API error: ${response.status} - ${await response.text()}`);
+        if (searchResult.error) {
+          console.error(`Search API error: ${searchResult.error}`);
           continue; // Try next query variation
         }
         
-        const data = await response.json();
-        console.log("Serper API response:", data);
+        if (!searchResult.results || !Array.isArray(searchResult.results)) {
+          console.warn("No search results found for query:", searchQuery);
+          continue;
+        }
         
-        // Extract all types of search results
-        const organicResults = data.organic || [];
-        const newsResults = data.news || [];
-        const knowledgeGraphResults = data.knowledgeGraph ? [data.knowledgeGraph] : [];
-        
-        // Combine all result types
-        const combinedResults = [
-          ...organicResults.map(result => ({
-            title: result.title || "",
-            snippet: result.snippet || "",
-            url: result.link || ""
-          })),
-          ...newsResults.map(result => ({
-            title: result.title || "",
-            snippet: result.snippet || "",
-            url: result.link || ""
-          })),
-          ...knowledgeGraphResults.map(result => ({
-            title: result.title || "",
-            snippet: result.description || "",
-            url: result.url || ""
-          }))
-        ];
-        
-        allResults = [...allResults, ...combinedResults];
+        // Add results to our collection
+        allResults = [...allResults, ...searchResult.results];
         
         // If we have enough results, break early
         if (allResults.length >= 3) {
@@ -292,50 +270,6 @@ export async function getAccidentHotspotData(address: string): Promise<AccidentH
   }
 }
 
-// Full LangChain agent integration for accident hotspot analysis
-export async function analyzeAccidentHotspots(address: string) {
-  try {
-    const tools = [webSearchTool];
-    
-    // Create a simple prompt template for the agent
-    const promptTemplate = ChatPromptTemplate.fromTemplate(`
-      You are an AI assistant that helps analyze accident history data for locations.
-      You have access to search tools to find information about accident history.
-      
-      User query: {input}
-      
-      Think through how to best answer this query using the available tools.
-    `);
-    
-    // Create the agent
-    const agent = await createOpenAIToolsAgent({
-      llm: geminiModel,
-      tools,
-      prompt: promptTemplate
-    });
-    
-    // Create the agent executor
-    const agentExecutor = new AgentExecutor({
-      agent,
-      tools,
-      verbose: true,
-    });
-    
-    // Execute the agent
-    const result = await agentExecutor.invoke({
-      input: `Analyze accident history for this location: ${address}. 
-      Is this location considered an accident hotspot? 
-      What types of accidents have occurred here in the past 6 months?
-      What safety precautions should drivers take at this location?`
-    });
-    
-    return result.output;
-  } catch (error) {
-    console.error("Error in accident hotspot agent:", error);
-    return "Unable to analyze accident hotspot data at this time.";
-  }
-}
-
 // Helper function to get accident hotspot context for a street name
 export async function getAccidentHotspotContext(
   streetName: string, 
@@ -378,6 +312,50 @@ export async function getAccidentHotspotContext(
   } catch (error) {
     console.error("Error getting accident hotspot context:", error);
     return "Accident history data unavailable.";
+  }
+}
+
+// Full LangChain agent integration for accident hotspot analysis
+export async function analyzeAccidentHotspots(address: string) {
+  try {
+    const tools = [webSearchTool];
+    
+    // Create a simple prompt template for the agent
+    const promptTemplate = ChatPromptTemplate.fromTemplate(`
+      You are an AI assistant that helps analyze accident history data for locations.
+      You have access to search tools to find information about accident history.
+      
+      User query: {input}
+      
+      Think through how to best answer this query using the available tools.
+    `);
+    
+    // Create the agent
+    const agent = await createOpenAIToolsAgent({
+      llm: geminiModel,
+      tools,
+      prompt: promptTemplate
+    });
+    
+    // Create the agent executor
+    const agentExecutor = new AgentExecutor({
+      agent,
+      tools,
+      verbose: true,
+    });
+    
+    // Execute the agent
+    const result = await agentExecutor.invoke({
+      input: `Analyze accident history for this location: ${address}. 
+      Is this location considered an accident hotspot? 
+      What types of accidents have occurred here in the past 6 months?
+      What safety precautions should drivers take at this location?`
+    });
+    
+    return result.output;
+  } catch (error) {
+    console.error("Error in accident hotspot agent:", error);
+    return "Unable to analyze accident hotspot data at this time.";
   }
 }
 

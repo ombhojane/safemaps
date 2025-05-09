@@ -59,7 +59,7 @@ SafeMaps analyzes various risk factors to recommend the safest travel routes:
    ```
    VITE_GOOGLE_MAPS_API_KEY=your_google_maps_api_key
    VITE_GEMINI_API_KEY=your_gemini_api_key
-   VITE_SERPER_API_KEY=your_serper_api_key
+   VITE_CUSTOM_SEARCH_ENGINE_ID=your_custom_search_engine_id
    ```
 
 4. **Start the development server**
@@ -82,8 +82,17 @@ SafeMaps analyzes various risk factors to recommend the safest travel routes:
    - Directions API
    - Street View API
    - Geocoding API
+   - Custom Search API
 5. Go to APIs & Services > Credentials
 6. Create an API key and add appropriate restrictions
+
+#### Google Custom Search Engine ID
+
+1. Go to the [Programmable Search Engine Control Panel](https://programmablesearchengine.google.com/create/new)
+2. Create a new search engine (you can set it to search the entire web)
+3. Get your Search Engine ID from the "Basics" section
+4. Add the ID to your `.env` file
+5. For detailed setup instructions, see `src/services/README-CUSTOM-SEARCH.md`
 
 #### Google Gemini API
 
@@ -181,6 +190,7 @@ The Accident Hotspot Analysis feature enhances the safety route planning capabil
 ### Technology Stack
 - **LangChain.js**: Framework for creating AI agents that perform web searches and analyze data
 - **Google Gemini AI**: Advanced LLM for interpreting accident data and street view images
+- **Google Custom Search API**: For retrieving relevant accident history data
 - **Dynamic Structured Tools**: Custom tools for web searches and data processing
 
 ## Usage
