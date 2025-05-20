@@ -112,6 +112,135 @@ const webSearchTool = new DynamicStructuredTool({
   },
 });
 
+// Few-shot examples for different accident scenarios to improve model responses
+const fewShotExamples = [
+  // Example 1: High-risk location with multiple accidents
+  {
+    scenario: "Multiple fatal accidents on NH48 Highway near Gurugram",
+    searchResults: [
+      {
+        title: "Three killed in crash on NH48 Highway near Gurugram",
+        snippet: "A collision between a truck and two cars on NH48 near Rajiv Chowk resulted in three fatalities last month. Police cited speeding and poor visibility due to fog as contributing factors.",
+        url: "https://example.com/news/accident-nh48-gurugram"
+      },
+      {
+        title: "NH48 accidents rise by 15%, authorities concerned",
+        snippet: "The stretch of NH48 near Gurugram has seen a 15% increase in accidents this year. Last week, a motorcyclist was killed when he lost control near Rajiv Chowk, the 5th fatality this month.",
+        url: "https://example.com/news/nh48-accident-statistics"
+      }
+    ],
+    response: {
+      hasAccidentHistory: true,
+      accidentFrequency: "high",
+      accidentSeverity: "fatal",
+      analysisText: "NH48 near Gurugram shows a concerning pattern of frequent fatal accidents, with multiple incidents reported in the last month including a deadly collision that killed three people.",
+      riskFactors: [
+        "High-speed corridor with frequent speeding",
+        "Poor visibility conditions during fog/rain",
+        "Heavy commercial vehicle traffic",
+        "Congestion at major intersections"
+      ],
+      suggestedPrecautions: [
+        "Reduce speed significantly below posted limits, especially during night or poor weather",
+        "Maintain extra distance from commercial vehicles",
+        "Use headlights at all times for improved visibility",
+        "Avoid lane changes near intersections"
+      ]
+    }
+  },
+  
+  // Example 2: Moderate risk location with non-fatal accidents
+  {
+    scenario: "Minor accidents at Downtown Chicago intersection",
+    searchResults: [
+      {
+        title: "Fender bender at Michigan and Adams intersection causes delays",
+        snippet: "A minor collision between two vehicles at Michigan Ave and Adams St in downtown Chicago caused traffic delays during rush hour yesterday. No injuries were reported.",
+        url: "https://example.com/news/downtown-accident"
+      },
+      {
+        title: "Chicago traffic report: Another collision at busy Michigan Avenue",
+        snippet: "Police responded to a minor accident at Michigan and Adams this morning. This is the third such incident at this intersection this month, though all have been non-injury accidents.",
+        url: "https://example.com/news/chicago-traffic"
+      }
+    ],
+    response: {
+      hasAccidentHistory: true,
+      accidentFrequency: "moderate",
+      accidentSeverity: "minor",
+      analysisText: "The Michigan and Adams intersection in Chicago has a moderate frequency of minor accidents, with three non-injury collisions reported this month, typically during rush hour periods.",
+      riskFactors: [
+        "High traffic congestion during rush hours",
+        "Complex intersection with multiple turning lanes",
+        "Pedestrian crossings creating stopping hazards",
+        "Limited visibility at certain approaches"
+      ],
+      suggestedPrecautions: [
+        "Approach the intersection at reduced speed",
+        "Maintain extra vigilance for sudden stops ahead",
+        "Be cautious of pedestrians crossing against signals",
+        "Allow extra space between vehicles when stopping"
+      ]
+    }
+  },
+  
+  // Example 3: Safe location with no accident history
+  {
+    scenario: "Residential area with no reported accidents",
+    searchResults: [
+      {
+        title: "Maple Street neighborhood celebrates safety milestone",
+        snippet: "The Maple Street residential area in Westville has gone two years without a traffic incident. City officials credit the recently installed traffic calming measures.",
+        url: "https://example.com/news/maple-street-safety"
+      }
+    ],
+    response: {
+      hasAccidentHistory: false,
+      accidentFrequency: "none",
+      accidentSeverity: "none",
+      analysisText: "No significant accident history found for this location, indicating a relatively safer route with well-implemented traffic calming measures.",
+      riskFactors: [
+        "Standard residential road conditions",
+        "Possible presence of pedestrians and children",
+        "Typical blind driveways and parked vehicles"
+      ],
+      suggestedPrecautions: [
+        "Drive at or below the posted residential speed limit",
+        "Stay alert for pedestrians and children at play",
+        "Be cautious near driveways and parked vehicles"
+      ]
+    }
+  },
+
+  // Example 4: Limited/ambiguous data scenario
+  {
+    scenario: "New development area with limited accident data",
+    searchResults: [
+      {
+        title: "Transportation study begins for River Front development",
+        snippet: "City planners are conducting traffic studies at the new River Front development area. Though no accidents have been reported yet, officials are concerned about the increased traffic flow.",
+        url: "https://example.com/news/riverfront-traffic-study"
+      }
+    ],
+    response: {
+      hasAccidentHistory: false,
+      accidentFrequency: "none",
+      accidentSeverity: "none",
+      analysisText: "No accident history data found for this newly developed area. The absence of reported accidents suggests it's currently a safe route, though increased traffic may change conditions.",
+      riskFactors: [
+        "New road layout unfamiliar to drivers",
+        "Ongoing construction activity possible",
+        "Increasing traffic volume as development grows"
+      ],
+      suggestedPrecautions: [
+        "Drive with extra caution in this unfamiliar area",
+        "Be alert for construction vehicles and temporary road changes",
+        "Follow posted speed limits which may be adjusted for developing conditions"
+      ]
+    }
+  }
+];
+
 /**
  * Get accident hotspot data for a specific location
  * @param address The address to analyze for accident history
@@ -173,7 +302,14 @@ export async function getAccidentHotspotData(address: string): Promise<AccidentH
     6. Determine appropriate precautions based directly on the accident types
     7. If NO accidents are reported, explicitly state this is a POSITIVE safety indicator
     
-    Provide a JSON response with these fields:
+    EXAMPLE SCENARIOS AND EXPECTED RESPONSES:
+    ${fewShotExamples.map(example => `
+    SCENARIO: ${example.scenario}
+    SEARCH RESULTS: ${JSON.stringify(example.searchResults)}
+    EXPECTED RESPONSE: ${JSON.stringify(example.response, null, 2)}
+    `).join('\n\n')}
+    
+    Now, provide a JSON response for the current search results with these fields:
     - hasAccidentHistory (boolean): Whether there's evidence of past accidents at or near this location
     - accidentFrequency (string): "none", "low", "moderate", "high", "very_high", or "unknown"
     - accidentSeverity (string): "none", "minor", "moderate", "severe", "fatal", or "unknown"
