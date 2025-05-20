@@ -8,7 +8,7 @@ import { testGoogleCustomSearch } from "./googleCustomSearchTest";
 // Get API keys from environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-const CUSTOM_SEARCH_ENGINE_ID = import.meta.env.VITE_CUSTOM_SEARCH_ENGINE_ID || ''; // Add this to your env
+const CUSTOM_SEARCH_ENGINE_ID = import.meta.env.VITE_CUSTOM_SEARCH_ENGINE_ID || '';
 
 // Initialize the Gemini API
 const genAI = new GoogleGenerativeAI(API_KEY);
@@ -49,36 +49,29 @@ const webSearchTool = new DynamicStructuredTool({
       const { query } = params;
       console.log(`Searching for accident data: ${query}`);
       
-      // Extract location name from coordinates if present
+      // Extract location name from query
       const locationQuery = query.replace(/\b\d+\.\d+,\s*\d+\.\d+\b/g, '')
                                 .replace(/traffic accidents at/i, '')
                                 .replace(/in the last 6 months/i, '')
                                 .trim();
       
-      // Create specific search query for accident history
-      // Shorten the query to focus on key parts to improve results
+      // Create search query variations to increase chances of finding relevant data
       const location = locationQuery.split(',').slice(0, 2).join(',');
-      
-      // Create multiple search query variations to increase chances of finding data
       const searchQueries = [
         `road accidents ${location} traffic incidents`,
         `car crashes ${location} news reports`,
         `${location} road accidents fatalities`,
-        `traffic accidents thane mumbai recent`  // Add a broader fallback query
+        `traffic accidents ${location} recent`
       ];
       
       if (!GOOGLE_MAPS_API_KEY) {
         console.error("Missing GOOGLE_MAPS_API_KEY in environment variables");
-        return JSON.stringify({ 
-          searchResults: [] 
-        });
+        return JSON.stringify({ searchResults: [] });
       }
 
       if (!CUSTOM_SEARCH_ENGINE_ID) {
         console.error("Missing CUSTOM_SEARCH_ENGINE_ID in environment variables");
-        return JSON.stringify({ 
-          searchResults: [] 
-        });
+        return JSON.stringify({ searchResults: [] });
       }
       
       // Track all search results
@@ -88,7 +81,7 @@ const webSearchTool = new DynamicStructuredTool({
       for (const searchQuery of searchQueries) {
         console.log(`Trying search query: ${searchQuery}`);
         
-        // Use Google Custom Search API through our test function
+        // Use Google Custom Search API
         const searchResult = await testGoogleCustomSearch(searchQuery);
         
         if (searchResult.error) {
@@ -110,21 +103,8 @@ const webSearchTool = new DynamicStructuredTool({
         }
       }
       
-      // Filter results to prioritize relevant accident data
-      const filteredResults = allResults.filter(result => {
-        const combinedText = (result.title + " " + result.snippet).toLowerCase();
-        return combinedText.includes("accident") || 
-               combinedText.includes("crash") || 
-               combinedText.includes("collision") ||
-               combinedText.includes("road") && (combinedText.includes("fatal") || combinedText.includes("death"));
-      });
-      
-      console.log("Combined and filtered search results:", filteredResults);
-      
-      // Return the filtered results, or all results if filtering removed everything
-      return JSON.stringify({ 
-        searchResults: filteredResults.length > 0 ? filteredResults : allResults
-      });
+      // Return all results without filtering
+      return JSON.stringify({ searchResults: allResults });
     } catch (error) {
       console.error("Error in web search:", error);
       return JSON.stringify({ searchResults: [] });
@@ -132,19 +112,15 @@ const webSearchTool = new DynamicStructuredTool({
   },
 });
 
-// Get accident hotspot data for a specific location
+/**
+ * Get accident hotspot data for a specific location
+ * @param address The address to analyze for accident history
+ */
 export async function getAccidentHotspotData(address: string): Promise<AccidentHotspotResponse> {
   try {
     // If no address is provided, return minimal response
     if (!address) {
-      return {
-        hasAccidentHistory: false,
-        accidentFrequency: 'none',
-        accidentSeverity: 'none',
-        analysisText: "No location data available for accident history analysis.",
-        riskFactors: [],
-        suggestedPrecautions: ["Drive with general caution."]
-      };
+      return createDefaultResponse("No location data available for accident history analysis.");
     }
 
     // Create a search query for accident history at this location
@@ -156,14 +132,10 @@ export async function getAccidentHotspotData(address: string): Promise<AccidentH
     
     // If no search results found, return positive safety response
     if (!parsedResults.searchResults || parsedResults.searchResults.length === 0) {
-      return {
-        hasAccidentHistory: false,
-        accidentFrequency: 'none',
-        accidentSeverity: 'none',
-        analysisText: `No accident history data found for ${address.split(',')[0]}, suggesting a relatively safer route.`,
-        riskFactors: ["General road conditions", "Normal traffic hazards"],
-        suggestedPrecautions: ["Maintain standard driving caution.", "Follow regular traffic safety practices."]
-      };
+      return createDefaultResponse(
+        `No accident history data found for ${address.split(',')[0]}, suggesting a relatively safer route.`,
+        false
+      );
     }
     
     // Use Gemini API for analyzing the search results
@@ -221,19 +193,27 @@ export async function getAccidentHotspotData(address: string): Promise<AccidentH
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
     
-    let response: AccidentHotspotResponse;
-    try {
-      // Parse the JSON response from the LLM
-      const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/) || 
-                        responseText.match(/{[\s\S]*?}/);
-      
-      if (jsonMatch && jsonMatch[1]) {
-        response = JSON.parse(jsonMatch[1]);
-      } else if (jsonMatch) {
-        response = JSON.parse(jsonMatch[0]);
-      } else {
-        throw new Error("Could not parse JSON from LLM response");
-      }
+    return parseGeminiResponse(responseText, address);
+  } catch (error) {
+    console.error("Error analyzing accident hotspot data:", error);
+    return createDefaultResponse(
+      "Error retrieving accident data, but location appears to have no recorded accident history."
+    );
+  }
+}
+
+/**
+ * Parse Gemini's response text and extract structured data
+ */
+function parseGeminiResponse(responseText: string, address: string): AccidentHotspotResponse {
+  try {
+    // Parse the JSON response from the LLM
+    const jsonMatch = responseText.match(/```json\n([\s\S]*?)\n```/) || 
+                      responseText.match(/{[\s\S]*?}/);
+    
+    if (jsonMatch) {
+      const jsonText = jsonMatch[1] || jsonMatch[0];
+      const response = JSON.parse(jsonText);
       
       // Ensure we have minimum data
       if (!response.riskFactors || response.riskFactors.length === 0) {
@@ -243,34 +223,42 @@ export async function getAccidentHotspotData(address: string): Promise<AccidentH
       if (!response.suggestedPrecautions || response.suggestedPrecautions.length === 0) {
         response.suggestedPrecautions = ["Drive cautiously in unfamiliar areas", "Stay alert for unexpected obstacles"];
       }
-    } catch (parseError) {
-      console.error("Error parsing LLM response:", parseError);
-      // Basic response if parsing fails
-      response = {
-        hasAccidentHistory: false,
-        accidentFrequency: 'unknown',
-        accidentSeverity: 'unknown',
-        analysisText: `Unable to analyze accident data for ${address.split(',')[0]}.`,
-        riskFactors: ["Unknown road conditions", "General traffic hazards"],
-        suggestedPrecautions: ["Drive with caution in unfamiliar areas.", "Follow standard traffic safety practices."]
-      };
+      
+      return response;
+    } else {
+      throw new Error("Could not parse JSON from LLM response");
     }
-    
-    return response;
-  } catch (error) {
-    console.error("Error analyzing accident hotspot data:", error);
+  } catch (parseError) {
+    console.error("Error parsing LLM response:", parseError);
+    // Basic response if parsing fails
     return {
       hasAccidentHistory: false,
-      accidentFrequency: 'none',
-      accidentSeverity: 'none',
-      analysisText: "Error retrieving accident data, but location appears to have no recorded accident history.",
-      riskFactors: ["Standard road conditions", "Regular traffic patterns"],
-      suggestedPrecautions: ["Drive with normal caution.", "Follow standard safety practices."]
+      accidentFrequency: 'unknown',
+      accidentSeverity: 'unknown',
+      analysisText: `Unable to analyze accident data for ${address.split(',')[0]}.`,
+      riskFactors: ["Unknown road conditions", "General traffic hazards"],
+      suggestedPrecautions: ["Drive with caution in unfamiliar areas.", "Follow standard traffic safety practices."]
     };
   }
 }
 
-// Helper function to get accident hotspot context for a street name
+/**
+ * Create a default response object for cases with no data or errors
+ */
+function createDefaultResponse(analysisText: string, hasAccidentHistory = false): AccidentHotspotResponse {
+  return {
+    hasAccidentHistory,
+    accidentFrequency: 'none',
+    accidentSeverity: 'none',
+    analysisText,
+    riskFactors: ["Standard road conditions", "Regular traffic patterns"],
+    suggestedPrecautions: ["Drive with normal caution.", "Follow standard safety practices."]
+  };
+}
+
+/**
+ * Get accident hotspot context for a street name
+ */
 export async function getAccidentHotspotContext(
   streetName: string, 
   city: string = "", 
@@ -290,33 +278,33 @@ export async function getAccidentHotspotContext(
     const analysisResult = await getAccidentHotspotData(locationString);
     
     // Create a textual context from the structured analysis
-    let contextString = "";
-    
     if (analysisResult.hasAccidentHistory) {
-      contextString = `Accident History: This location (${locationString}) has a ${analysisResult.accidentFrequency} frequency of accidents. `;
+      let contextString = `Accident History: This location (${locationString}) has a ${analysisResult.accidentFrequency} frequency of accidents. `;
       
       if (analysisResult.riskFactors.length > 0) {
         contextString += `Risk factors in this area include ${analysisResult.riskFactors.join(", ")}. `;
       }
       
       contextString += `Safety precautions: ${analysisResult.suggestedPrecautions.join(". ")}.`;
+      return contextString;
     } else {
-      contextString = `No significant accident history found for ${locationString}. Exercise caution. `;
+      let contextString = `No significant accident history found for ${locationString}. Exercise caution. `;
       
       if (analysisResult.suggestedPrecautions.length > 0) {
         contextString += `Safety precautions: ${analysisResult.suggestedPrecautions.join(". ")}.`;
       }
+      return contextString;
     }
-    
-    return contextString;
   } catch (error) {
     console.error("Error getting accident hotspot context:", error);
     return "Accident history data unavailable.";
   }
 }
 
-// Full LangChain agent integration for accident hotspot analysis
-export async function analyzeAccidentHotspots(address: string) {
+/**
+ * Full LangChain agent integration for accident hotspot analysis
+ */
+export async function analyzeAccidentHotspots(address: string): Promise<string> {
   try {
     const tools = [webSearchTool];
     
