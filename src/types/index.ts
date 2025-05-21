@@ -59,6 +59,16 @@ export interface Route {
     safetySuggestions: string[];
     error?: string;
   };
+  // Add criminal hotspot analysis results for the entire route
+  criminalHotspotAnalysis?: {
+    isAnalyzing: boolean;
+    overallSafetyScore: number;
+    highRiskAreas: Array<{locationName: string; reason: string}>;
+    safetyAnalysis: string;
+    safetySummary: string;
+    safetySuggestions: string[];
+    error?: string;
+  };
   // Add weather information
   weather?: {
     condition: string;
@@ -181,6 +191,16 @@ export interface StreetViewLocation {
     hasAccidentHistory: boolean;
     accidentFrequency: 'none' | 'low' | 'moderate' | 'high' | 'very_high' | 'unknown';
     accidentSeverity: 'none' | 'minor' | 'moderate' | 'severe' | 'fatal' | 'unknown';
+    analysisText: string;
+    riskFactors: string[];
+    suggestedPrecautions: string[];
+  };
+  // Add criminal hotspot data
+  criminalHotspot?: {
+    hasCrimeHistory: boolean;
+    crimeFrequency: 'none' | 'low' | 'moderate' | 'high' | 'very_high' | 'unknown';
+    crimeSeverity: 'none' | 'minor' | 'moderate' | 'severe' | 'violent' | 'unknown';
+    crimeTypes: string[];
     analysisText: string;
     riskFactors: string[];
     suggestedPrecautions: string[];

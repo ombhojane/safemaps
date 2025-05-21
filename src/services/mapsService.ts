@@ -634,7 +634,7 @@ export const computeRoutes = async (
           walkingRoute.distanceMeters = routeData.distanceMeters;
           walkingRoute.duration = routeData.duration;
           walkingRoute.polyline = routeData.polyline;
-          walkingRoute.legs = routeData.legs as any;
+          walkingRoute.legs = routeData.legs as unknown as Route['legs'];
           walkingRoute.routeLabels = routeData.routeLabels;
           walkingRoute.transitDetails = [walkingStep];
           return walkingRoute;
@@ -715,7 +715,7 @@ export const computeRoutes = async (
         // Include required API properties
         distanceMeters: route.distanceMeters,
         polyline: route.polyline,
-        legs: route.legs as any
+        legs: route.legs as unknown as Route['legs']
       };
       
       // Add weather information if available
@@ -735,7 +735,7 @@ export const computeRoutes = async (
 
     // Start Gemini analysis for all routes asynchronously for any travel mode
     // We don't await this so routes are returned to the user immediately
-    const resolvedRoutes = await Promise.all(routePromises) as any as Route[];
+    const resolvedRoutes = await Promise.all(routePromises) as Route[];
     if (resolvedRoutes.length > 0) {
       analyzeAllRoutes(resolvedRoutes);
     }
@@ -763,6 +763,9 @@ export const computeRoutes = async (
 // Function to analyze all routes with AI
 const analyzeAllRoutes = async (routes: Route[]) => {
   try {
+    // Import the criminal hotspots service - needs to be imported here to avoid circular dependencies
+    const { analyzeRouteCrimeHotspots } = await import('./criminalHotspotsService');
+    
     // Process routes in parallel with Promise.all
     await Promise.all(routes.map(async (route) => {
       if (!route.streetViewImages || route.streetViewImages.length === 0) return;
@@ -776,6 +779,16 @@ const analyzeAllRoutes = async (routes: Route[]) => {
       
       // Initialize accidentHotspotAnalysis property
       route.accidentHotspotAnalysis = {
+        isAnalyzing: true,
+        overallSafetyScore: 0,
+        highRiskAreas: [],
+        safetyAnalysis: "",
+        safetySummary: "",
+        safetySuggestions: []
+      };
+      
+      // Initialize criminalHotspotAnalysis property
+      route.criminalHotspotAnalysis = {
         isAnalyzing: true,
         overallSafetyScore: 0,
         highRiskAreas: [],
@@ -827,45 +840,166 @@ const analyzeAllRoutes = async (routes: Route[]) => {
           }
         }
         
-        // Analyze accident hotspots for the entire route
+        // Add criminal hotspot information from each location
+        if (route.streetViewLocations && route.streetViewLocations.length > 0) {
+          const crimeInfos = route.streetViewLocations
+            .filter(loc => loc.criminalHotspot && loc.streetName)
+            .map(loc => {
+              const hotspot = loc.criminalHotspot;
+              if (!hotspot) return "";
+              
+              let info = `At ${loc.streetName}: ${hotspot.analysisText} `;
+              
+              if (hotspot.crimeTypes && hotspot.crimeTypes.length > 0) {
+                info += `Crime types: ${hotspot.crimeTypes.join(", ")}. `;
+              }
+              
+              if (hotspot.riskFactors && hotspot.riskFactors.length > 0) {
+                info += `Risk factors: ${hotspot.riskFactors.join(", ")}. `;
+              }
+              
+              if (hotspot.suggestedPrecautions && hotspot.suggestedPrecautions.length > 0) {
+                info += `Precautions: ${hotspot.suggestedPrecautions.join(". ")}.`;
+              }
+              
+              return info;
+            })
+            .filter(info => info.length > 0);
+            
+          if (crimeInfos.length > 0) {
+            contextInfo += "\n\nCrime History Information:\n" + crimeInfos.join("\n");
+          }
+        }
+        
+        // Analyze accident hotspots and criminal hotspots for the entire route
         if (route.streetViewLocations && route.streetViewLocations.length > 0) {
           const routeName = `${route.source.name} to ${route.destination.name}`;
           
-          // Run the accident hotspot analysis in parallel with the Gemini analysis
-          const accidentAnalysisPromise = analyzeRouteAccidentHotspots(
-            route.streetViewLocations,
-            routeName
-          );
+          // Run all analyses in parallel but handle their results/errors independently
+          try {
+            // Get analysis results with all context information
+            const analysisResults = await analyzeStreetViewImages(
+              imagesToAnalyze, 
+              contextInfo
+            );
+            
+            const averageRiskScore = calculateAverageRiskScore(analysisResults.riskScores);
+            
+            // Update route with analysis results
+            route.geminiAnalysis = {
+              riskScores: analysisResults.riskScores,
+              explanations: analysisResults.explanations,
+              precautions: analysisResults.precautions,
+              averageRiskScore,
+              isAnalyzing: false
+            };
+            
+            // Dispatch event for Gemini analysis
+            dispatchRouteAnalysisComplete(route);
+          } catch (geminiError) {
+            console.error(`Error in Gemini analysis for route ${route.id}:`, geminiError);
+            route.geminiAnalysis = {
+              riskScores: [],
+              averageRiskScore: 0,
+              isAnalyzing: false,
+              error: 'Analysis failed'
+            };
+            dispatchRouteAnalysisComplete(route);
+          }
           
-          // Get analysis results with all context information
-          const analysisResults = await analyzeStreetViewImages(
-            imagesToAnalyze, 
-            contextInfo
-          );
+          try {
+            // Run accident hotspot analysis
+            const accidentAnalysis = await analyzeRouteAccidentHotspots(
+              route.streetViewLocations,
+              routeName
+            );
+            
+            // Update route with accident hotspot analysis
+            route.accidentHotspotAnalysis = {
+              isAnalyzing: false,
+              overallSafetyScore: accidentAnalysis.overallSafetyScore,
+              highRiskAreas: accidentAnalysis.highRiskAreas,
+              safetyAnalysis: accidentAnalysis.safetyAnalysis,
+              safetySummary: accidentAnalysis.safetySummary,
+              safetySuggestions: accidentAnalysis.safetySuggestions
+            };
+            
+            // Dispatch custom event for accident analysis
+            const accidentEvent = new CustomEvent('accident-analysis-complete', { 
+              detail: { 
+                routeId: route.id,
+                analysis: route.accidentHotspotAnalysis
+              } 
+            });
+            window.dispatchEvent(accidentEvent);
+          } catch (accidentError) {
+            console.error(`Error in accident hotspot analysis for route ${route.id}:`, accidentError);
+            route.accidentHotspotAnalysis = {
+              isAnalyzing: false,
+              overallSafetyScore: 70,
+              highRiskAreas: [],
+              safetyAnalysis: "Error analyzing accident data for this route.",
+              safetySummary: "Accident analysis unavailable.",
+              safetySuggestions: ["Exercise normal caution while traveling."],
+              error: 'Analysis failed'
+            };
+            
+            // Dispatch custom event even on error
+            const accidentEvent = new CustomEvent('accident-analysis-complete', { 
+              detail: { 
+                routeId: route.id,
+                analysis: route.accidentHotspotAnalysis
+              } 
+            });
+            window.dispatchEvent(accidentEvent);
+          }
           
-          // Wait for accident hotspot analysis to complete
-          const accidentAnalysis = await accidentAnalysisPromise;
-          
-          const averageRiskScore = calculateAverageRiskScore(analysisResults.riskScores);
-          
-          // Update route with analysis results
-          route.geminiAnalysis = {
-            riskScores: analysisResults.riskScores,
-            explanations: analysisResults.explanations,
-            precautions: analysisResults.precautions,
-            averageRiskScore,
-            isAnalyzing: false
-          };
-          
-          // Update route with accident hotspot analysis
-          route.accidentHotspotAnalysis = {
-            isAnalyzing: false,
-            overallSafetyScore: accidentAnalysis.overallSafetyScore,
-            highRiskAreas: accidentAnalysis.highRiskAreas,
-            safetyAnalysis: accidentAnalysis.safetyAnalysis,
-            safetySummary: accidentAnalysis.safetySummary,
-            safetySuggestions: accidentAnalysis.safetySuggestions
-          };
+          try {
+            // Run criminal hotspot analysis
+            const crimeAnalysis = await analyzeRouteCrimeHotspots(
+              route.streetViewLocations,
+              routeName
+            );
+            
+            // Update route with criminal hotspot analysis
+            route.criminalHotspotAnalysis = {
+              isAnalyzing: false,
+              overallSafetyScore: crimeAnalysis.overallSafetyScore,
+              highRiskAreas: crimeAnalysis.highRiskAreas,
+              safetyAnalysis: crimeAnalysis.safetyAnalysis,
+              safetySummary: crimeAnalysis.safetySummary,
+              safetySuggestions: crimeAnalysis.safetySuggestions
+            };
+            
+            // Dispatch custom event for crime analysis
+            const crimeEvent = new CustomEvent('crime-analysis-complete', { 
+              detail: { 
+                routeId: route.id,
+                analysis: route.criminalHotspotAnalysis
+              } 
+            });
+            window.dispatchEvent(crimeEvent);
+          } catch (crimeError) {
+            console.error(`Error in criminal hotspot analysis for route ${route.id}:`, crimeError);
+            route.criminalHotspotAnalysis = {
+              isAnalyzing: false,
+              overallSafetyScore: 70,
+              highRiskAreas: [],
+              safetyAnalysis: "Error analyzing crime data for this route.",
+              safetySummary: "Crime analysis unavailable.",
+              safetySuggestions: ["Maintain normal awareness."],
+              error: 'Analysis failed'
+            };
+            
+            // Dispatch custom event even on error
+            const crimeEvent = new CustomEvent('crime-analysis-complete', { 
+              detail: { 
+                routeId: route.id,
+                analysis: route.criminalHotspotAnalysis
+              } 
+            });
+            window.dispatchEvent(crimeEvent);
+          }
         }
         
         // Dispatch an event to notify UI components about the completed analysis
@@ -885,6 +1019,12 @@ const analyzeAllRoutes = async (routes: Route[]) => {
         if (route.accidentHotspotAnalysis) {
           route.accidentHotspotAnalysis.isAnalyzing = false;
           route.accidentHotspotAnalysis.error = 'Analysis failed';
+        }
+        
+        // Update criminal hotspot analysis to show it failed
+        if (route.criminalHotspotAnalysis) {
+          route.criminalHotspotAnalysis.isAnalyzing = false;
+          route.criminalHotspotAnalysis.error = 'Analysis failed';
         }
         
         // Dispatch event with failure state
@@ -1031,85 +1171,95 @@ const sampleRoutePoints = (points: { lat: number; lng: number }[], interval: num
   return streetViewPoints;
 };
 
-// Adjust the fetchStreetViewImages implementation to use correct property names from locationInfo
+// Function to fetch street view images for a given set of points
 export const fetchStreetViewImages = async (
   points: { lat: number; lng: number }[], 
   interval = 300,
   cityName: string = ""
 ): Promise<{ images: string[], locations: import('@/types').StreetViewLocation[] }> => {
   try {
-    // Use sample strategy to reduce number of API calls
-    // We sample roughly one point every 300 meters of the route
+    // Import related services
+    const { getAccidentHotspotData } = await import('./accidentHotspotsService');
+    const { updateLocationsWithCrimeData } = await import('./fetchStreetViewImages');
+    
+    // Sample points along the route at the specified interval
     const sampledPoints = sampleRoutePoints(points, interval);
     
-    if (sampledPoints.length === 0) {
-      console.warn('No points to fetch street view images for');
-      return { images: [], locations: [] };
-    }
-    
-    console.log(`Fetching ${sampledPoints.length} street view images for route`);
-    
-    // Fetch street view metadata and images in parallel
-    const results = await Promise.all(sampledPoints.map(async (point) => {
+    // Prepare image URLs and location data
+    const imagePromises = sampledPoints.map(async (point, index) => {
       try {
-        // Get location details for this point
-        const locationInfo = await getLocationInfo(point.lat, point.lng);
-        const streetName = locationInfo?.streetName || 'Unknown Street';
-        const formattedAddress = locationInfo?.formattedAddress || '';
-        const city = cityName || '';
-        const region = '';
+        const { lat, lng } = point;
         
-        // Get accident hotspot data for this location
-        const accidentHotspotData = await getAccidentHotspotData(formattedAddress || `${streetName}, ${city}`);
+        // Get reverse geocoding information
+        const locationInfo = await getLocationInfo(lat, lng);
         
-        // Build the Street View URL
-        const zoom = 90; // Default zoom level
-        const pitch = 10; // Slight upward tilt
-        const fov = 90; // Wide field of view
+        // Calculate heading (direction) between this point and the next point
+        const nextPoint = sampledPoints[index + 1] || sampledPoints[index - 1] || { lat: lat + 0.001, lng: lng + 0.001 };
+        const heading = calculateHeading(point, nextPoint);
         
-        // Determine heading based on route direction
-        const headingTowardsNext = sampledPoints.indexOf(point) < sampledPoints.length - 1 
-          ? calculateHeading(point, sampledPoints[sampledPoints.indexOf(point) + 1])
-          : 0;
+        // Get Street View Image URL
+        const streetViewUrl = `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${lat},${lng}&heading=${heading}&key=${API_KEY}`;
         
-        // Form the URL with all parameters
-        const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-        const url = `https://maps.googleapis.com/maps/api/streetview?size=600x400&location=${point.lat},${point.lng}&heading=${headingTowardsNext}&pitch=${pitch}&fov=${fov}&key=${apiKey}`;
+        // Extract the street name and formatted address
+        const streetName = locationInfo?.streetName || 
+                          (locationInfo as any)?.address_components?.find((c: any) => c.types.includes('route'))?.long_name ||
+                          `Unnamed Road ${index + 1}`;
         
+        const formattedAddress = locationInfo?.formattedAddress || 
+                                (streetName + (cityName ? `, ${cityName}` : ''));
+        
+        // For each location, get accident hotspot data
+        let accidentHotspot = undefined;
+        if (formattedAddress) {
+          try {
+            accidentHotspot = await getAccidentHotspotData(formattedAddress);
+          } catch (error) {
+            console.error(`Error getting accident hotspot data for ${formattedAddress}:`, error);
+          }
+        }
+        
+        // Return image URL and location data
         return {
-          url,
+          imageUrl: streetViewUrl,
           location: {
-            coordinates: point,
-            heading: headingTowardsNext,
-            index: sampledPoints.indexOf(point),
+            coordinates: { lat, lng },
+            heading,
+            index,
             streetName,
             formattedAddress,
-            // Include accident hotspot data
-            accidentHotspot: {
-              hasAccidentHistory: accidentHotspotData.hasAccidentHistory,
-              accidentFrequency: accidentHotspotData.accidentFrequency,
-              accidentSeverity: accidentHotspotData.accidentSeverity,
-              analysisText: accidentHotspotData.analysisText,
-              riskFactors: accidentHotspotData.riskFactors,
-              suggestedPrecautions: accidentHotspotData.suggestedPrecautions
-            }
+            accidentHotspot
           }
         };
       } catch (error) {
-        console.error(`Error fetching Street View for location ${point.lat},${point.lng}:`, error);
+        console.error("Error fetching street view image:", error);
         return null;
       }
-    }));
+    });
     
-    // Filter out any failed requests
+    // Wait for all image promises to resolve
+    const results = await Promise.all(imagePromises);
+    
+    // Filter out any null results
     const validResults = results.filter(result => result !== null);
     
-    const images = validResults.map(result => result.url);
-    const locations = validResults.map(result => result.location);
+    // Extract images and locations from results
+    const images = validResults.map(result => result.imageUrl);
+    let locations = validResults.map(result => result.location);
     
+    // Update locations with criminal hotspot data
+    try {
+      const updatedLocations = await updateLocationsWithCrimeData(locations);
+      if (updatedLocations && updatedLocations.length > 0) {
+        locations = updatedLocations as typeof locations;
+      }
+    } catch (error) {
+      console.error("Error updating locations with crime data:", error);
+    }
+    
+    // Return street view images and their locations
     return { images, locations };
   } catch (error) {
-    console.error('Error fetching Street View images:', error);
+    console.error("Error in fetchStreetViewImages:", error);
     return { images: [], locations: [] };
   }
 };

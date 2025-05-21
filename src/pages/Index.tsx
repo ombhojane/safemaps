@@ -342,17 +342,61 @@ const Index = () => {
       );
     };
 
-    // Add event listener
+    const handleAccidentAnalysisComplete = (event: CustomEvent) => {
+      const { routeId, analysis } = event.detail;
+      setRoutes(prevRoutes => 
+        prevRoutes.map(route => 
+          route.id === routeId ? {
+            ...route,
+            accidentHotspotAnalysis: analysis
+          } : route
+        )
+      );
+    };
+
+    const handleCrimeAnalysisComplete = (event: CustomEvent) => {
+      const { routeId, analysis } = event.detail;
+      setRoutes(prevRoutes => 
+        prevRoutes.map(route => 
+          route.id === routeId ? {
+            ...route,
+            criminalHotspotAnalysis: analysis
+          } : route
+        )
+      );
+    };
+
+    // Add event listeners
     window.addEventListener(
       ROUTE_ANALYSIS_COMPLETE_EVENT, 
       handleRouteAnalysisComplete as EventListener
     );
+    
+    window.addEventListener(
+      'accident-analysis-complete', 
+      handleAccidentAnalysisComplete as EventListener
+    );
+    
+    window.addEventListener(
+      'crime-analysis-complete', 
+      handleCrimeAnalysisComplete as EventListener
+    );
 
-    // Clean up event listener
+    // Clean up event listeners
     return () => {
       window.removeEventListener(
         ROUTE_ANALYSIS_COMPLETE_EVENT, 
         handleRouteAnalysisComplete as EventListener
+      );
+      
+      window.removeEventListener(
+        'accident-analysis-complete', 
+        handleAccidentAnalysisComplete as EventListener
+      );
+      
+      window.removeEventListener(
+        'crime-analysis-complete', 
+        handleCrimeAnalysisComplete as EventListener
       );
     };
   }, []);
@@ -721,6 +765,78 @@ const Index = () => {
                     </div>
                   </div>
                   
+                  {/* Criminal Activity Analysis */}
+                  <div className="p-3 border rounded-lg bg-muted/30 mb-4">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-5 w-5 text-orange-500 mt-0.5" />
+                      <div>
+                        <h3 className="text-sm font-medium mb-1">Criminal Activity Analysis</h3>
+                        
+                        {selectedRoute.criminalHotspotAnalysis?.isAnalyzing ? (
+                          <div className="flex items-center gap-1.5 my-2">
+                            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-sm">Analyzing crime data...</span>
+                          </div>
+                        ) : selectedRoute.criminalHotspotAnalysis?.error ? (
+                          <p className="text-sm text-muted-foreground">
+                            Could not analyze crime data for this route.
+                          </p>
+                        ) : selectedRoute.criminalHotspotAnalysis ? (
+                          <>
+                            <div className="grid grid-cols-2 gap-4 my-2">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Safety Score</p>
+                                <p className="text-lg">{selectedRoute.criminalHotspotAnalysis.overallSafetyScore}/100</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Risk Areas</p>
+                                <p className="text-lg">{selectedRoute.criminalHotspotAnalysis.highRiskAreas.length}</p>
+                              </div>
+                            </div>
+                            
+                            <p className="text-sm mb-3">{selectedRoute.criminalHotspotAnalysis.safetySummary}</p>
+                            
+                            {/* High Risk Areas Section */}
+                            {selectedRoute.criminalHotspotAnalysis.highRiskAreas.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">High-Risk Areas:</h4>
+                                <ul className="text-sm space-y-2">
+                                  {selectedRoute.criminalHotspotAnalysis.highRiskAreas.slice(0, 3).map((area, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <strong>{area.locationName}:</strong> {area.reason}
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            
+                            {/* Safety Suggestions */}
+                            {selectedRoute.criminalHotspotAnalysis.safetySuggestions.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">Safety Recommendations:</h4>
+                                <ul className="text-sm space-y-1.5">
+                                  {selectedRoute.criminalHotspotAnalysis.safetySuggestions.slice(0, 3).map((suggestion, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                      <span className="text-muted-foreground">{suggestion}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No crime data available for this route.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
                 <Tabs defaultValue="streetview" className="w-full">
                   <TabsList className="mb-4">
                     <TabsTrigger value="streetview" className="flex items-center gap-1">
@@ -985,6 +1101,80 @@ const Index = () => {
                         ) : (
                           <p className="text-sm text-muted-foreground">
                             No accident hotspot data available for this route.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Criminal Activity Analysis */}
+                {bottomSheetState === 'full' && (
+                  <div className="p-3 border rounded-lg bg-muted/30 mb-4">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="h-5 w-5 text-orange-500 mt-0.5" />
+                      <div>
+                        <h3 className="text-sm font-medium mb-1">Criminal Activity Analysis</h3>
+                        
+                        {selectedRoute.criminalHotspotAnalysis?.isAnalyzing ? (
+                          <div className="flex items-center gap-1.5 my-2">
+                            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-sm">Analyzing crime data...</span>
+                          </div>
+                        ) : selectedRoute.criminalHotspotAnalysis?.error ? (
+                          <p className="text-sm text-muted-foreground">
+                            Could not analyze crime data for this route.
+                          </p>
+                        ) : selectedRoute.criminalHotspotAnalysis ? (
+                          <>
+                            <div className="grid grid-cols-2 gap-4 my-2">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Safety Score</p>
+                                <p className="text-lg">{selectedRoute.criminalHotspotAnalysis.overallSafetyScore}/100</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Risk Areas</p>
+                                <p className="text-lg">{selectedRoute.criminalHotspotAnalysis.highRiskAreas.length}</p>
+                              </div>
+                            </div>
+                            
+                            <p className="text-sm mb-3">{selectedRoute.criminalHotspotAnalysis.safetySummary}</p>
+                            
+                            {/* High Risk Areas Section */}
+                            {selectedRoute.criminalHotspotAnalysis.highRiskAreas.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">High-Risk Areas:</h4>
+                                <ul className="text-sm space-y-2">
+                                  {selectedRoute.criminalHotspotAnalysis.highRiskAreas.slice(0, 3).map((area, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <strong>{area.locationName}:</strong> {area.reason}
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            
+                            {/* Safety Suggestions */}
+                            {selectedRoute.criminalHotspotAnalysis.safetySuggestions.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">Safety Recommendations:</h4>
+                                <ul className="text-sm space-y-1.5">
+                                  {selectedRoute.criminalHotspotAnalysis.safetySuggestions.slice(0, 3).map((suggestion, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                      <span className="text-muted-foreground">{suggestion}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No crime data available for this route.
                           </p>
                         )}
                       </div>
