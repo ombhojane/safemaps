@@ -12,7 +12,7 @@ const CUSTOM_SEARCH_ENGINE_ID = import.meta.env.VITE_CUSTOM_SEARCH_ENGINE_ID;
  * @param query Search query
  * @returns Promise with search results
  */
-export async function testGoogleCustomSearch(query: string = "road accidents Mumbai") {
+export async function GoogleCustomSearch(query: string = "road accidents Mumbai") {
   try {
     console.log(`Testing Google Custom Search API with query: ${query}`);
     
@@ -83,7 +83,7 @@ export async function testGoogleCustomSearch(query: string = "road accidents Mum
 
 // Automatically run the test if this file is executed directly
 // if (import.meta.url.endsWith('googleCustomSearchTest.ts')) {
-//   testGoogleCustomSearch()
+//   GoogleCustomSearch()
 //     .then(result => {
 //       console.log("Test Result:", result);
 //       if (result.success) {
@@ -94,4 +94,4 @@ export async function testGoogleCustomSearch(query: string = "road accidents Mum
 //     });
 // }
 
-export default testGoogleCustomSearch; 
+export default GoogleCustomSearch; 

@@ -1,9 +1,14 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { DynamicStructuredTool } from "@langchain/core/tools";
+import { ToolParams } from "@langchain/core/tools";
 import { AgentExecutor, createOpenAIToolsAgent } from "langchain/agents";
 import { ChatPromptTemplate } from "@langchain/core/prompts";
-import { testGoogleCustomSearch } from "./googleCustomSearchTest";
+import { GoogleCustomSearch } from "./googleCustomSearchTest";
+import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
+import { StructuredOutputParser } from "@langchain/core/output_parsers";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { z } from "zod";
 
 // Get API keys from environment variables
 const API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
@@ -13,7 +18,7 @@ const CUSTOM_SEARCH_ENGINE_ID = import.meta.env.VITE_CUSTOM_SEARCH_ENGINE_ID || 
 // Initialize the Gemini API
 const genAI = new GoogleGenerativeAI(API_KEY);
 
-// Use GoogleGenerativeAI embeddings for content
+// Use GoogleGenerativeAI model for the agent
 const geminiModel = new ChatGoogleGenerativeAI({
   model: "gemini-1.5-flash",
   apiKey: API_KEY,
@@ -82,7 +87,7 @@ const webSearchTool = new DynamicStructuredTool({
         console.log(`Trying search query: ${searchQuery}`);
         
         // Use Google Custom Search API
-        const searchResult = await testGoogleCustomSearch(searchQuery);
+        const searchResult = await GoogleCustomSearch(searchQuery);
         
         if (searchResult.error) {
           console.error(`Search API error: ${searchResult.error}`);
@@ -103,14 +108,20 @@ const webSearchTool = new DynamicStructuredTool({
         }
       }
       
-      // Return all results without filtering
       return JSON.stringify({ searchResults: allResults });
     } catch (error) {
       console.error("Error in web search:", error);
       return JSON.stringify({ searchResults: [] });
     }
-  },
+  }
 });
+
+// Define the search result interface
+interface SearchResult {
+  title: string;
+  snippet: string;
+  url: string;
+}
 
 // Few-shot examples for different accident scenarios to improve model responses
 const fewShotExamples = [
@@ -242,25 +253,13 @@ const fewShotExamples = [
 ];
 
 /**
- * Get accident hotspot data for a specific location
- * @param address The address to analyze for accident history
+ * Analyze search results and generate accident hotspot assessment
+ * This is a direct function for analyzing results (fallback if agent fails)
  */
-export async function getAccidentHotspotData(address: string): Promise<AccidentHotspotResponse> {
+async function analyzeSearchResults(address: string, searchResults: SearchResult[]): Promise<AccidentHotspotResponse> {
   try {
-    // If no address is provided, return minimal response
-    if (!address) {
-      return createDefaultResponse("No location data available for accident history analysis.");
-    }
-
-    // Create a search query for accident history at this location
-    const searchQuery = `traffic accidents at ${address} in the last 6 months`;
-    
-    // Use the web search tool to find accident history
-    const searchResults = await webSearchTool.func({ query: searchQuery });
-    const parsedResults = JSON.parse(searchResults);
-    
-    // If no search results found, return positive safety response
-    if (!parsedResults.searchResults || parsedResults.searchResults.length === 0) {
+    // If no search results found, return default safe response
+    if (!searchResults || searchResults.length === 0) {
       return createDefaultResponse(
         `No accident history data found for ${address.split(',')[0]}, suggesting a relatively safer route.`,
         false
@@ -274,7 +273,7 @@ export async function getAccidentHotspotData(address: string): Promise<AccidentH
     Analyze the provided search results about accident history at ${address} and provide a structured assessment.
     Focus on identifying patterns, risk factors, and providing a concise analysis.
     
-    Search Results: ${JSON.stringify(parsedResults.searchResults)}
+    Search Results: ${JSON.stringify(searchResults)}
     
     IMPORTANT ANALYSIS GUIDELINES:
     1. PROXIMITY INTERPRETATION:
@@ -328,12 +327,14 @@ export async function getAccidentHotspotData(address: string): Promise<AccidentH
     // Generate response from Gemini
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
+
+    console.log("Gemini response:", responseText);
     
     return parseGeminiResponse(responseText, address);
   } catch (error) {
-    console.error("Error analyzing accident hotspot data:", error);
+    console.error("Error analyzing accident data:", error);
     return createDefaultResponse(
-      "Error retrieving accident data, but location appears to have no recorded accident history."
+      "Error analyzing accident data, but location appears to have no recorded accident history."
     );
   }
 }
@@ -393,6 +394,38 @@ function createDefaultResponse(analysisText: string, hasAccidentHistory = false)
 }
 
 /**
+ * Get accident hotspot data for a specific location using direct function calls
+ * @param address The address to analyze for accident history
+ */
+export async function getAccidentHotspotData(address: string): Promise<AccidentHotspotResponse> {
+  try {
+    // If no address is provided, return minimal response
+    if (!address) {
+      return createDefaultResponse("No location data available for accident history analysis.");
+    }
+
+    console.log(`Analyzing accident hotspot data for: ${address}`);
+    
+    // Create a search query for accident history at this location
+    const searchQuery = `traffic accidents at ${address} in the last 6 months`;
+    
+    // Use the web search tool directly to find accident history
+    const searchResults = await webSearchTool.invoke({ query: searchQuery });
+    const parsedResults = JSON.parse(searchResults);
+    console.log("Data context: ", parsedResults);
+    
+    // Analyze the search results
+    return await analyzeSearchResults(address, parsedResults.searchResults || []);
+    
+  } catch (error) {
+    console.error("Error analyzing accident hotspot data:", error);
+    return createDefaultResponse(
+      "Error retrieving accident data, but location appears to have no recorded accident history."
+    );
+  }
+}
+
+/**
  * Get accident hotspot context for a street name
  */
 export async function getAccidentHotspotContext(
@@ -438,47 +471,43 @@ export async function getAccidentHotspotContext(
 }
 
 /**
- * Full LangChain agent integration for accident hotspot analysis
+ * LangChain agent integration for accident hotspot analysis for more complex queries
  */
 export async function analyzeAccidentHotspots(address: string): Promise<string> {
   try {
-    const tools = [webSearchTool];
+    if (!address) {
+      return "No location data available for accident history analysis.";
+    }
     
-    // Create a simple prompt template for the agent
-    const promptTemplate = ChatPromptTemplate.fromTemplate(`
-      You are an AI assistant that helps analyze accident history data for locations.
-      You have access to search tools to find information about accident history.
-      
-      User query: {input}
-      
-      Think through how to best answer this query using the available tools.
-    `);
+    // First get the regular accident hotspot data
+    const hotspotData = await getAccidentHotspotData(address);
     
-    // Create the agent
-    const agent = await createOpenAIToolsAgent({
-      llm: geminiModel,
-      tools,
-      prompt: promptTemplate
-    });
+    // Generate a comprehensive text response from the structured data
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
-    // Create the agent executor
-    const agentExecutor = new AgentExecutor({
-      agent,
-      tools,
-      verbose: true,
-    });
+    const prompt = `
+    I'm going to provide you with structured data about accident history for a location.
+    Please convert this into a comprehensive but concise natural language analysis for the user.
     
-    // Execute the agent
-    const result = await agentExecutor.invoke({
-      input: `Analyze accident history for this location: ${address}. 
-      Is this location considered an accident hotspot? 
-      What types of accidents have occurred here in the past 6 months?
-      What safety precautions should drivers take at this location?`
-    });
+    Location: ${address}
     
-    return result.output;
+    Accident Data:
+    ${JSON.stringify(hotspotData, null, 2)}
+    
+    Please format your response as a clear analysis that answers:
+    1. Is this location considered an accident hotspot?
+    2. What types of accidents have occurred here recently?
+    3. What safety precautions should drivers take at this location?
+    
+    Keep your response under 200 words, be factual, and don't exaggerate risks.
+    If there's no accident history, emphasize this is a positive safety indicator.
+    `;
+    
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+    
   } catch (error) {
-    console.error("Error in accident hotspot agent:", error);
+    console.error("Error in accident hotspot analysis:", error);
     return "Unable to analyze accident hotspot data at this time.";
   }
 }
