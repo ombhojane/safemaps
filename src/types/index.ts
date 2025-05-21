@@ -49,6 +49,16 @@ export interface Route {
     precautions?: string[];
     error?: string;
   };
+  // Add accident hotspot analysis results for the entire route
+  accidentHotspotAnalysis?: {
+    isAnalyzing: boolean;
+    overallSafetyScore: number;
+    highRiskAreas: Array<{locationName: string; reason: string}>;
+    safetyAnalysis: string;
+    safetySummary: string;
+    safetySuggestions: string[];
+    error?: string;
+  };
   // Add weather information
   weather?: {
     condition: string;

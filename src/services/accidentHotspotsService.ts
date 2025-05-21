@@ -512,8 +512,241 @@ export async function analyzeAccidentHotspots(address: string): Promise<string> 
   }
 }
 
+// Add a new function to analyze accident hotspots across an entire route
+export async function analyzeRouteAccidentHotspots(
+  streetViewLocations: Array<{
+    streetName?: string;
+    accidentHotspot?: AccidentHotspotResponse;
+    coordinates?: { lat: number; lng: number };
+  }>,
+  routeName: string = ""
+): Promise<{
+  overallSafetyScore: number; 
+  highRiskAreas: Array<{locationName: string; reason: string}>;
+  safetyAnalysis: string;
+  safetySummary: string;
+  safetySuggestions: string[];
+}> {
+  try {
+    if (!streetViewLocations || streetViewLocations.length === 0) {
+      return {
+        overallSafetyScore: 80, // Default to moderately safe
+        highRiskAreas: [],
+        safetyAnalysis: "No location data available for accident history analysis.",
+        safetySummary: "Safety information unavailable for this route.",
+        safetySuggestions: ["Drive with normal caution.", "Stay alert at all times."]
+      };
+    }
+
+    console.log(`Analyzing route accident hotspots across ${streetViewLocations.length} locations`);
+    
+    // Filter out locations without accident hotspot data
+    const locationsWithData = streetViewLocations.filter(loc => 
+      loc.accidentHotspot && loc.streetName
+    );
+    
+    if (locationsWithData.length === 0) {
+      return {
+        overallSafetyScore: 80, // Default to moderately safe
+        highRiskAreas: [],
+        safetyAnalysis: "No accident history data available for locations along this route.",
+        safetySummary: "No specific risk areas identified on this route.",
+        safetySuggestions: ["Drive with normal caution.", "Stay alert at all times."]
+      };
+    }
+    
+    // Aggregate accident hotspot data for all locations
+    const aggregatedData = {
+      locationCount: locationsWithData.length,
+      locationsWithAccidentHistory: locationsWithData.filter(loc => 
+        loc.accidentHotspot?.hasAccidentHistory
+      ).length,
+      frequencyBreakdown: {
+        none: locationsWithData.filter(loc => loc.accidentHotspot?.accidentFrequency === 'none').length,
+        low: locationsWithData.filter(loc => loc.accidentHotspot?.accidentFrequency === 'low').length,
+        moderate: locationsWithData.filter(loc => loc.accidentHotspot?.accidentFrequency === 'moderate').length,
+        high: locationsWithData.filter(loc => loc.accidentHotspot?.accidentFrequency === 'high').length,
+        very_high: locationsWithData.filter(loc => loc.accidentHotspot?.accidentFrequency === 'very_high').length,
+        unknown: locationsWithData.filter(loc => loc.accidentHotspot?.accidentFrequency === 'unknown').length
+      },
+      severityBreakdown: {
+        none: locationsWithData.filter(loc => loc.accidentHotspot?.accidentSeverity === 'none').length,
+        minor: locationsWithData.filter(loc => loc.accidentHotspot?.accidentSeverity === 'minor').length,
+        moderate: locationsWithData.filter(loc => loc.accidentHotspot?.accidentSeverity === 'moderate').length,
+        severe: locationsWithData.filter(loc => loc.accidentHotspot?.accidentSeverity === 'severe').length,
+        fatal: locationsWithData.filter(loc => loc.accidentHotspot?.accidentSeverity === 'fatal').length,
+        unknown: locationsWithData.filter(loc => loc.accidentHotspot?.accidentSeverity === 'unknown').length
+      },
+      // Collect all risk factors and count occurrences
+      riskFactors: collectAndCountItems(locationsWithData.map(loc => loc.accidentHotspot?.riskFactors || [])),
+      // Collect all safety precautions and count occurrences
+      suggestedPrecautions: collectAndCountItems(locationsWithData.map(loc => loc.accidentHotspot?.suggestedPrecautions || [])),
+      // Detailed locations data
+      locationDetails: locationsWithData.map(loc => ({
+        streetName: loc.streetName || "Unnamed Street",
+        hasAccidentHistory: loc.accidentHotspot?.hasAccidentHistory || false,
+        accidentFrequency: loc.accidentHotspot?.accidentFrequency || 'unknown',
+        accidentSeverity: loc.accidentHotspot?.accidentSeverity || 'unknown',
+        analysisText: loc.accidentHotspot?.analysisText || "",
+        coordinates: loc.coordinates || { lat: 0, lng: 0 }
+      }))
+    };
+    
+    // Calculate a basic safety score based on frequency and severity
+    const calculateRawSafetyScore = (): number => {
+      const totalLocations = aggregatedData.locationCount;
+      if (totalLocations === 0) return 80; // Default
+      
+      // Calculate score based on accident frequency (higher is better)
+      const frequencyScore = (
+        (aggregatedData.frequencyBreakdown.none * 100) +
+        (aggregatedData.frequencyBreakdown.low * 70) +
+        (aggregatedData.frequencyBreakdown.moderate * 50) +
+        (aggregatedData.frequencyBreakdown.high * 20) +
+        (aggregatedData.frequencyBreakdown.very_high * 0) +
+        (aggregatedData.frequencyBreakdown.unknown * 60)
+      ) / totalLocations;
+      
+      // Calculate score based on accident severity (higher is better)
+      const severityScore = (
+        (aggregatedData.severityBreakdown.none * 100) +
+        (aggregatedData.severityBreakdown.minor * 80) +
+        (aggregatedData.severityBreakdown.moderate * 60) +
+        (aggregatedData.severityBreakdown.severe * 20) +
+        (aggregatedData.severityBreakdown.fatal * 0) +
+        (aggregatedData.severityBreakdown.unknown * 60)
+      ) / totalLocations;
+      
+      // Combine scores with a heavier weight on severity
+      return Math.round((frequencyScore * 0.4) + (severityScore * 0.6));
+    };
+    
+    const rawSafetyScore = calculateRawSafetyScore();
+    
+    // Identify high risk areas (streets with high or very high accident frequency)
+    const highRiskAreas = aggregatedData.locationDetails
+      .filter(loc => 
+        loc.accidentFrequency === 'high' || 
+        loc.accidentFrequency === 'very_high' ||
+        loc.accidentSeverity === 'severe' ||
+        loc.accidentSeverity === 'fatal'
+      )
+      .map(loc => ({
+        locationName: loc.streetName,
+        reason: loc.analysisText || `${loc.accidentFrequency} accident frequency with ${loc.accidentSeverity} severity`
+      }));
+    
+    // Use Gemini to generate the final analysis
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    
+    const prompt = `
+    You are a road safety expert providing an analysis of a route based on accident hotspot data.
+    
+    Route name: ${routeName || "Selected route"}
+    
+    I'll provide you with aggregated accident hotspot data from multiple points along the route.
+    Please analyze this data to provide comprehensive safety insights.
+    
+    AGGREGATED ACCIDENT DATA:
+    ${JSON.stringify(aggregatedData, null, 2)}
+    
+    Raw Safety Score (0-100, higher is safer): ${rawSafetyScore}
+    
+    Based on the data above, provide the following:
+    
+    1. SAFETY SCORE ADJUSTMENT: Review the raw safety score (${rawSafetyScore}) and adjust it if needed based on your expert analysis. The final score should be between a scale of 0-100, where higher is safer.
+    
+    2. SAFETY ANALYSIS: A detailed 4-6 sentence analysis of the overall route safety, focusing on accident patterns, risk factors, and severity. Analyze how the different segments of the route compare in terms of safety. 
+    
+    3. SAFETY SUMMARY: A concise one-sentence summary of the route's safety profile that could be shown to users as a quick overview.
+    
+    4. SAFETY SUGGESTIONS: 3-5 specific, actionable safety recommendations for travelers on this route. Prioritize the most important precautions based on the identified risk factors. Make sure these are specific to the actual risks identified in the data, not generic advice.
+    
+    5. HIGH RISK AREAS VERIFICATION: Analyze if the automatically identified high-risk areas (${highRiskAreas.length > 0 ? highRiskAreas.map(area => area.locationName).join(', ') : 'none'}) are correct based on the data. Add or remove areas as appropriate.
+    
+    Format your response as a JSON object with these keys:
+    {
+      "adjustedSafetyScore": number,
+      "safetyAnalysis": "detailed analysis here",
+      "safetySummary": "concise summary here", 
+      "safetySuggestions": ["suggestion1", "suggestion2", ...],
+      "verifiedHighRiskAreas": [{"locationName": "Street Name", "reason": "Specific reason this area is high risk"}, ...]
+    }
+    
+    IMPORTANT GUIDELINES:
+    - Be honest about risks, but don't exaggerate dangers
+    - If data shows the route is mostly safe, emphasize this positive aspect
+    - Focus on factual analysis, not speculation
+    - Base suggestions on the actual risk factors identified in the data
+    - Keep your language clear and concise
+    `;
+    
+    const result = await model.generateContent(prompt);
+    const analysisText = result.response.text();
+    
+    // Parse the Gemini response
+    try {
+      // Extract JSON from the response
+      const jsonMatch = analysisText.match(/```json\n([\s\S]*?)\n```/) || 
+                        analysisText.match(/{[\s\S]*?}/);
+      
+      if (jsonMatch) {
+        const jsonText = jsonMatch[1] || jsonMatch[0];
+        const analysis = JSON.parse(jsonText);
+        
+        return {
+          overallSafetyScore: analysis.adjustedSafetyScore || rawSafetyScore,
+          highRiskAreas: analysis.verifiedHighRiskAreas || highRiskAreas,
+          safetyAnalysis: analysis.safetyAnalysis || "No detailed safety analysis available.",
+          safetySummary: analysis.safetySummary || "No safety summary available.",
+          safetySuggestions: analysis.safetySuggestions || aggregatedData.suggestedPrecautions.slice(0, 5).map(item => item.text)
+        };
+      }
+    } catch (parseError) {
+      console.error("Error parsing route analysis response:", parseError);
+    }
+    
+    // Fallback if parsing fails
+    return {
+      overallSafetyScore: rawSafetyScore,
+      highRiskAreas,
+      safetyAnalysis: "Analysis of accident hotspots along this route shows varied levels of safety concerns. Exercise appropriate caution especially in areas with higher accident frequency.",
+      safetySummary: `Route has ${highRiskAreas.length} high-risk areas out of ${aggregatedData.locationCount} analyzed locations.`,
+      safetySuggestions: aggregatedData.suggestedPrecautions.slice(0, 5).map(item => item.text)
+    };
+    
+  } catch (error) {
+    console.error("Error analyzing route accident hotspots:", error);
+    return {
+      overallSafetyScore: 70, // Default to moderately safe
+      highRiskAreas: [],
+      safetyAnalysis: "Error while analyzing accident data for this route.",
+      safetySummary: "Route safety information unavailable.",
+      safetySuggestions: ["Drive with appropriate caution.", "Stay alert at all times."]
+    };
+  }
+}
+
+// Helper function to collect and count items from multiple arrays
+function collectAndCountItems(arrays: Array<string[]>): Array<{text: string; count: number}> {
+  const itemCounts: Record<string, number> = {};
+  
+  // Count occurrences of each item
+  arrays.forEach(array => {
+    array.forEach(item => {
+      itemCounts[item] = (itemCounts[item] || 0) + 1;
+    });
+  });
+  
+  // Convert to array and sort by count (descending)
+  return Object.entries(itemCounts)
+    .map(([text, count]) => ({ text, count }))
+    .sort((a, b) => b.count - a.count);
+}
+
 export default {
   getAccidentHotspotData,
   analyzeAccidentHotspots,
-  getAccidentHotspotContext
+  getAccidentHotspotContext,
+  analyzeRouteAccidentHotspots
 }; 

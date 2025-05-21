@@ -232,10 +232,14 @@ const Index = () => {
     if (!selectedRoute) return 'no-route';
     const isAnalyzing = selectedRoute.geminiAnalysis?.isAnalyzing ? 'analyzing' : 'not-analyzing';
     const analysisScore = selectedRoute.geminiAnalysis?.averageRiskScore || 0;
-    return `route-${selectedRoute.id}-${isAnalyzing}-${analysisScore}`;
+    const isAnalyzingHotspots = selectedRoute.accidentHotspotAnalysis?.isAnalyzing ? 'analyzing-hotspots' : 'not-analyzing-hotspots';
+    const hotspotScore = selectedRoute.accidentHotspotAnalysis?.overallSafetyScore || 0;
+    return `route-${selectedRoute.id}-${isAnalyzing}-${analysisScore}-${isAnalyzingHotspots}-${hotspotScore}`;
   }, [selectedRoute, 
       selectedRoute?.geminiAnalysis?.isAnalyzing, 
-      selectedRoute?.geminiAnalysis?.averageRiskScore]);
+      selectedRoute?.geminiAnalysis?.averageRiskScore,
+      selectedRoute?.accidentHotspotAnalysis?.isAnalyzing,
+      selectedRoute?.accidentHotspotAnalysis?.overallSafetyScore]);
 
   // Setup touch event handlers for the bottom sheet
   useEffect(() => {
@@ -645,6 +649,78 @@ const Index = () => {
                     </div>
                   )}
                   
+                  {/* Accident Hotspot Analysis */}
+                  <div className="p-3 border rounded-lg bg-muted/30 mb-4">
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-5 w-5 text-red-500 mt-0.5" />
+                      <div>
+                        <h3 className="text-sm font-medium mb-1">Accident Hotspot Analysis</h3>
+                        
+                        {selectedRoute.accidentHotspotAnalysis?.isAnalyzing ? (
+                          <div className="flex items-center gap-1.5 my-2">
+                            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-sm">Analyzing accident hotspots...</span>
+                          </div>
+                        ) : selectedRoute.accidentHotspotAnalysis?.error ? (
+                          <p className="text-sm text-muted-foreground">
+                            Could not analyze accident data for this route.
+                          </p>
+                        ) : selectedRoute.accidentHotspotAnalysis ? (
+                          <>
+                            <div className="grid grid-cols-2 gap-4 my-2">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Safety Score</p>
+                                <p className="text-lg">{selectedRoute.accidentHotspotAnalysis.overallSafetyScore}/100</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Risk Areas</p>
+                                <p className="text-lg">{selectedRoute.accidentHotspotAnalysis.highRiskAreas.length}</p>
+                              </div>
+                            </div>
+                            
+                            <p className="text-sm mb-3">{selectedRoute.accidentHotspotAnalysis.safetySummary}</p>
+                            
+                            {/* High Risk Areas Section */}
+                            {selectedRoute.accidentHotspotAnalysis.highRiskAreas.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">High-Risk Areas:</h4>
+                                <ul className="text-sm space-y-2">
+                                  {selectedRoute.accidentHotspotAnalysis.highRiskAreas.slice(0, 3).map((area, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <strong>{area.locationName}:</strong> {area.reason}
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            
+                            {/* Safety Suggestions */}
+                            {selectedRoute.accidentHotspotAnalysis.safetySuggestions.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">Safety Recommendations:</h4>
+                                <ul className="text-sm space-y-1.5">
+                                  {selectedRoute.accidentHotspotAnalysis.safetySuggestions.slice(0, 3).map((suggestion, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                      <span className="text-muted-foreground">{suggestion}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No accident hotspot data available for this route.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
                 <Tabs defaultValue="streetview" className="w-full">
                   <TabsList className="mb-4">
                     <TabsTrigger value="streetview" className="flex items-center gap-1">
@@ -836,6 +912,80 @@ const Index = () => {
                               ))}
                             </ul>
                           </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Accident Hotspot Analysis */}
+                {bottomSheetState === 'full' && (
+                  <div className="p-3 border rounded-lg bg-muted/30 mb-4">
+                    <div className="flex items-start gap-2">
+                      <MapPin className="h-5 w-5 text-red-500 mt-0.5" />
+                      <div>
+                        <h3 className="text-sm font-medium mb-1">Accident Hotspot Analysis</h3>
+                        
+                        {selectedRoute.accidentHotspotAnalysis?.isAnalyzing ? (
+                          <div className="flex items-center gap-1.5 my-2">
+                            <div className="h-4 w-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                            <span className="text-sm">Analyzing accident hotspots...</span>
+                          </div>
+                        ) : selectedRoute.accidentHotspotAnalysis?.error ? (
+                          <p className="text-sm text-muted-foreground">
+                            Could not analyze accident data for this route.
+                          </p>
+                        ) : selectedRoute.accidentHotspotAnalysis ? (
+                          <>
+                            <div className="grid grid-cols-2 gap-4 my-2">
+                              <div>
+                                <p className="text-xs text-muted-foreground">Safety Score</p>
+                                <p className="text-lg">{selectedRoute.accidentHotspotAnalysis.overallSafetyScore}/100</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-muted-foreground">Risk Areas</p>
+                                <p className="text-lg">{selectedRoute.accidentHotspotAnalysis.highRiskAreas.length}</p>
+                              </div>
+                            </div>
+                            
+                            <p className="text-sm mb-3">{selectedRoute.accidentHotspotAnalysis.safetySummary}</p>
+                            
+                            {/* High Risk Areas Section */}
+                            {selectedRoute.accidentHotspotAnalysis.highRiskAreas.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">High-Risk Areas:</h4>
+                                <ul className="text-sm space-y-2">
+                                  {selectedRoute.accidentHotspotAnalysis.highRiskAreas.slice(0, 3).map((area, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <strong>{area.locationName}:</strong> {area.reason}
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            
+                            {/* Safety Suggestions */}
+                            {selectedRoute.accidentHotspotAnalysis.safetySuggestions.length > 0 && (
+                              <div className="mt-2 border-t pt-3">
+                                <h4 className="text-sm font-medium mb-2">Safety Recommendations:</h4>
+                                <ul className="text-sm space-y-1.5">
+                                  {selectedRoute.accidentHotspotAnalysis.safetySuggestions.slice(0, 3).map((suggestion, index) => (
+                                    <li key={index} className="flex items-start gap-2">
+                                      <Lightbulb className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
+                                      <span className="text-muted-foreground">{suggestion}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            No accident hotspot data available for this route.
+                          </p>
                         )}
                       </div>
                     </div>

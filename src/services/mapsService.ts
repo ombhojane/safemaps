@@ -1,7 +1,7 @@
 import { Location, Route, RoutePoint, TransitStep } from "@/types";
 import { analyzeStreetViewImages, calculateAverageRiskScore } from "@/services/geminiService";
 import { getRouteLocationWeather, getWeatherCondition } from "@/services/weatherService";
-import { getAccidentHotspotData } from './accidentHotspotsService';
+import { getAccidentHotspotData, analyzeRouteAccidentHotspots } from './accidentHotspotsService';
 
 // Get API key from environment variables
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
@@ -774,6 +774,16 @@ const analyzeAllRoutes = async (routes: Route[]) => {
         isAnalyzing: true
       };
       
+      // Initialize accidentHotspotAnalysis property
+      route.accidentHotspotAnalysis = {
+        isAnalyzing: true,
+        overallSafetyScore: 0,
+        highRiskAreas: [],
+        safetyAnalysis: "",
+        safetySummary: "",
+        safetySuggestions: []
+      };
+      
       // Dispatch an event to notify that analysis has started
       dispatchRouteAnalysisComplete(route);
       
@@ -817,22 +827,46 @@ const analyzeAllRoutes = async (routes: Route[]) => {
           }
         }
         
-        // Get analysis results with all context information
-        const analysisResults = await analyzeStreetViewImages(
-          imagesToAnalyze, 
-          contextInfo
-        );
-        
-        const averageRiskScore = calculateAverageRiskScore(analysisResults.riskScores);
-        
-        // Update route with analysis results
-        route.geminiAnalysis = {
-          riskScores: analysisResults.riskScores,
-          explanations: analysisResults.explanations,
-          precautions: analysisResults.precautions,
-          averageRiskScore,
-          isAnalyzing: false
-        };
+        // Analyze accident hotspots for the entire route
+        if (route.streetViewLocations && route.streetViewLocations.length > 0) {
+          const routeName = `${route.source.name} to ${route.destination.name}`;
+          
+          // Run the accident hotspot analysis in parallel with the Gemini analysis
+          const accidentAnalysisPromise = analyzeRouteAccidentHotspots(
+            route.streetViewLocations,
+            routeName
+          );
+          
+          // Get analysis results with all context information
+          const analysisResults = await analyzeStreetViewImages(
+            imagesToAnalyze, 
+            contextInfo
+          );
+          
+          // Wait for accident hotspot analysis to complete
+          const accidentAnalysis = await accidentAnalysisPromise;
+          
+          const averageRiskScore = calculateAverageRiskScore(analysisResults.riskScores);
+          
+          // Update route with analysis results
+          route.geminiAnalysis = {
+            riskScores: analysisResults.riskScores,
+            explanations: analysisResults.explanations,
+            precautions: analysisResults.precautions,
+            averageRiskScore,
+            isAnalyzing: false
+          };
+          
+          // Update route with accident hotspot analysis
+          route.accidentHotspotAnalysis = {
+            isAnalyzing: false,
+            overallSafetyScore: accidentAnalysis.overallSafetyScore,
+            highRiskAreas: accidentAnalysis.highRiskAreas,
+            safetyAnalysis: accidentAnalysis.safetyAnalysis,
+            safetySummary: accidentAnalysis.safetySummary,
+            safetySuggestions: accidentAnalysis.safetySuggestions
+          };
+        }
         
         // Dispatch an event to notify UI components about the completed analysis
         dispatchRouteAnalysisComplete(route);
@@ -846,6 +880,12 @@ const analyzeAllRoutes = async (routes: Route[]) => {
           isAnalyzing: false,
           error: 'Analysis failed'
         };
+        
+        // Update accident hotspot analysis to show it failed
+        if (route.accidentHotspotAnalysis) {
+          route.accidentHotspotAnalysis.isAnalyzing = false;
+          route.accidentHotspotAnalysis.error = 'Analysis failed';
+        }
         
         // Dispatch event with failure state
         dispatchRouteAnalysisComplete(route);
